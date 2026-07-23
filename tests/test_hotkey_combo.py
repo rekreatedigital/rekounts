@@ -1,4 +1,7 @@
 """Combo-tracker edge detection, incl. the 'release any key ends PTT' bug fix."""
+import sys
+
+import pytest
 from pynput import keyboard
 
 from rekounts.hotkey_manager import _Combo
@@ -72,6 +75,14 @@ def test_re_press_after_release_fires_again():
 
 
 # --- OS ground-truth polling (self-heal + watchdog, finding 4) -------------
+# These pin WINDOWS virtual-key semantics: the poller is GetAsyncKeyState, an
+# API that only exists on Windows, and pynput's Key.vk values differ per OS.
+# The macOS port ships its own poll implementation and its own tests.
+_WIN32_ONLY = pytest.mark.skipif(sys.platform != "win32",
+                                 reason="GetAsyncKeyState VK semantics are Windows-only")
+
+
+@_WIN32_ONLY
 def test_all_required_down_uses_pollable_vks():
     combo, _ = make([CTRL, CMD])
     # ctrl -> VK_CONTROL 0x11; win -> VK_LWIN 0x5B / VK_RWIN 0x5C.
@@ -79,6 +90,7 @@ def test_all_required_down_uses_pollable_vks():
     assert combo.all_required_down(lambda vk: vk == 0x11) is False   # win up
 
 
+@_WIN32_ONLY
 def test_all_required_down_accepts_the_right_hand_win_key():
     # pynput reports the Windows key as VK_LWIN, but a right-Win press is 0x5C;
     # the poll must count either as "win is down".
@@ -86,6 +98,7 @@ def test_all_required_down_accepts_the_right_hand_win_key():
     assert combo.all_required_down(lambda vk: vk in {0x11, 0x5C}) is True
 
 
+@_WIN32_ONLY
 def test_all_required_down_accepts_right_hand_modifiers():
     # Shift arrives as VK_LSHIFT from pynput; a right-shift poll (0xA1) must
     # still count. (Guards the modifier-group expansion.)
