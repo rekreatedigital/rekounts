@@ -1,0 +1,101 @@
+name: tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          # Hash the file we actually install, or the cache key never changes
+          # when the test deps do.
+          cache-dependency-path: requirements-test.txt
+
+      - name: Install test dependencies
+        # NOT requirements.txt: that is the runtime set (~805 MB installed) and
+        # pulls the whole faster-whisper native stack, which no test imports.
+        # See requirements-test.txt for why each remaining package is needed.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt
+
+      - name: Run tests
+        run: python -m pytest -q
+
+  pytest-posix:
+    # The app is Windows-only, but the unit suite is platform-neutral by
+    # design: the registry, winsound and Win32 clipboard layers are faked or
+    # skipped, and the Qt tests run offscreen. Keeping the suite green on
+    # Linux/macOS guards the seam a future macOS port will build on.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system libraries (Linux)
+        # libportaudio2: sounddevice's import needs the system PortAudio.
+        # xvfb: pynput's xorg backend requires an X display at import time
+        #   (its dummy backend won't do — base Key members share vk=None, so
+        #   HotKey.parse("<ctrl>+<cmd>") dies on "duplicate" keys).
+        # libegl1: Qt's import on slimmer runner images.
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2 xvfb libegl1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-test.txt
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt
+
+      - name: Run tests (Linux, under a virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -m pytest -q
+
+      - name: Run tests (macOS)
+        # No X involved on macOS: pynput's darwin backend imports without any
+        # special permissions (the tests never start a real listener).
+        if: runner.os == 'macOS'
+        run: python -m pytest -q
+
+  lint:
+    # Ruff is pure-Python-analysis, so this runs on the cheaper/faster Linux
+    # image even though the app itself is Windows-only.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-test.txt
+
+      - name: Install ruff
+        run: pip install ruff==0.15.22
+
+      - name: Lint
+        # Rule selection lives in pyproject.toml: real-bug rules only (pyflakes
+        # + syntax errors), not style. Takes well under a second.
+        run: ruff check .

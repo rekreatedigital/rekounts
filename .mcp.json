@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "rekoll": {
+      "type": "stdio",
+      "command": "C:\\Users\\user\\Documents\\GitHub\\talkativeAI\\.venv\\Scripts\\rekoll-mcp.exe",
+      "args": [
+        "--path",
+        "C:\\Users\\user\\Documents\\GitHub\\talkativeAI\\.rekoll\\memory.db",
+        "--tenant",
+        "default",
+        "--project",
+        "talkativeai",
+        "--agent",
+        "default"
+      ]
+    }
+  }
+}

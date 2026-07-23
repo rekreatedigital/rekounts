@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# PyInstaller build output
+build/
+dist/
+
+# throwaway dashboard preview artifacts (from scripts/seed_history.py)
+scripts/seed_preview.db
+scripts/seed_preview_cfg.json
+scripts/shots/
+
+# rekoll shared project memory — local SQLite store, never committed
+# (the store lives here; .mcp.json pins its absolute path — see docs/memory-layer.md)
+.rekoll/
+
+# stray local databases/logs at the repo root (root-scoped on purpose —
+# a tracked .db/.log elsewhere would still be seen)
+/*.db
+/*.log

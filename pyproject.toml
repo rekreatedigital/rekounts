@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rekounts"
+requires-python = ">=3.11"
+# Single source of truth for the version string: rekounts/__init__.py.
+# It has to live in the package, because the runtime (tray "Check for Updates",
+# any future About box) and the frozen .exe both need it, and importlib.metadata
+# is unreliable inside a PyInstaller bundle where nothing is pip-installed.
+# Rekounts.spec reads the same literal to stamp the .exe's version resource.
+dynamic = ["version"]
+
+[tool.setuptools.dynamic]
+version = { attr = "rekounts.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+# Real-bug rules only — pyflakes (undefined names, unused imports, shadowed
+# definitions) plus syntax/IO errors. Deliberately NOT the style rules: the
+# codebase uses semicolon-joined lines in tests on purpose, and a formatting
+# gate is not worth the churn on a two-person project.
+select = ["E9", "F"]
+

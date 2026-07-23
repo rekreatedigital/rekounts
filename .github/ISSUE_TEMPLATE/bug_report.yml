@@ -1,0 +1,53 @@
+name: Bug report
+description: Something broke or behaved wrong
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time — a minute of detail here usually saves a
+        round-trip later.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: |
+        1. Held Ctrl+Win and said "hello world", released
+        2. Expected the text to appear in Notepad
+        3. Nothing was typed; the pill went back to idle
+    validations:
+      required: true
+  - type: input
+    id: windows-version
+    attributes:
+      label: Windows version
+      description: Settings → System → About, or run `winver`.
+      placeholder: e.g. Windows 11 24H2 (build 26100)
+    validations:
+      required: true
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How are you running it?
+      options:
+        - Standalone Rekounts.exe
+        - From source (run.bat / python -m rekounts)
+    validations:
+      required: true
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version (source installs only)
+      description: Output of `python --version`. Leave empty if you use the .exe.
+      placeholder: e.g. Python 3.12.4
+  - type: textarea
+    id: log
+    attributes:
+      label: Log excerpt
+      description: |
+        Paste the tail of `%APPDATA%\Rekounts\logs\rekounts.log` —
+        everything after the most recent "Rekounts started" line is ideal.
+        The log records events and errors, never your dictated text, but give
+        it a quick skim before pasting anyway.
+      render: text

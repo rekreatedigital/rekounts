@@ -1,0 +1,39 @@
+# Minimal dependency set for running the unit test suite (used by CI).
+#
+# requirements.txt is the RUNTIME set (~805 MB installed). The tests never load
+# the speech model, so faster-whisper and its native stack (ctranslate2, av,
+# onnxruntime, tokenizers, huggingface-hub) are pure CI overhead. Verified by
+# running the full suite in a scratch venv containing only the packages below:
+# 209 passed, 0 skipped — the same result as the full requirements.
+#
+# Why each entry is still needed (all four are imported at test-collection time,
+# so dropping any of them turns green tests into collection errors):
+#   numpy              tests/test_audio_utils.py imports it directly; the
+#                      recorder/controller tests build audio buffers with it.
+#   pynput             tests/test_hotkey_*.py import pynput.keyboard Key/KeyCode
+#                      to drive the hotkey parser and gesture engine.
+#   sounddevice        rekounts/audio_recorder.py imports it at module top,
+#                      so tests/test_audio_recorder.py needs it importable.
+#   PySide6-Essentials tests/test_overlay.py imports rekounts.ui.overlay at
+#                      module top (before its pytest.importorskip guard), and the
+#                      widget tests spin up an offscreen QApplication.
+#
+# PySide6-Essentials, not PySide6: the app only uses QtCore/QtGui/QtWidgets, all
+# of which live in Essentials. Skipping the Addons wheel is most of the saving
+# (805 MB -> 288 MB installed; 59s -> 13s cold install).
+#
+# Deliberately absent:
+#   faster-whisper  never imported by tests (Transcriber imports it lazily,
+#                   inside _load(), so importing the module is free).
+#   pywin32         text_inserter imports win32clipboard inside a try/except, so
+#                   the Win32 backend smoke test passes without it. It only adds
+#                   clipboard *format preservation*, which has no unit test.
+#   pyperclip       likewise imported lazily, inside the fallback backend.
+# Keep pinned versions in sync with requirements.txt.
+
+pytest==8.2.2
+numpy==1.26.4
+pynput==1.7.7
+sounddevice==0.4.7
+PySide6-Essentials==6.7.2
+ruff==0.15.22

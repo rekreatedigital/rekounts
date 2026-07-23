@@ -1,0 +1,11 @@
+faster-whisper==1.0.3
+sounddevice==0.4.7
+numpy==1.26.4
+pynput==1.7.7
+pyperclip==1.9.0
+# Windows-only (clipboard format preservation); the marker keeps
+# `pip install -r requirements.txt` working on Linux/macOS for development.
+# >=310 is required by the rekoll memory layer's MCP server sharing this venv.
+pywin32==312; sys_platform == 'win32'
+PySide6==6.7.2
+pytest==8.2.2

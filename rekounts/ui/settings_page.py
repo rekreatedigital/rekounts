@@ -1,0 +1,868 @@
+"""The Settings page — a first-class page inside the Hub, not a second window.
+
+Layout follows the rest of the Hub: sections (General / Audio / Behavior /
+System / Data & Privacy), each a card of aligned rows. A row is a title, an
+optional one-line explanation, and one control in a fixed right-hand column.
+
+Apply model: **instant apply**. Every control persists on change (config.set →
+config.save) and then asks the app to live-apply, coalesced through a short
+timer so dragging a spinbox doesn't rebuild the hotkey listener twenty times.
+There is no Save button and no restart path — the setting you changed is the
+setting that is running.
+"""
+
+import logging
+
+from PySide6 import QtCore, QtGui, QtWidgets
+
+from rekounts.config import default_config_path
+from rekounts.device_utils import classify_level, resolve_input_device
+from rekounts.hotkey_manager import DEFAULT_HOTKEY, is_valid_hotkey
+from rekounts.languages import LANGUAGES
+from rekounts.ui import theme
+
+log = logging.getLogger(__name__)
+
+_LEVEL_MESSAGES = {
+    "loud": "Heard you clearly.",
+    "quiet": "Very quiet — boosted, may still work.",
+    "silent": "Silent — wrong microphone, or muted.",
+}
+
+NETWORK_STATEMENT = (
+    "Rekounts runs entirely on this machine. It reaches the network exactly "
+    "twice: once to download the speech model the first time you use it, and "
+    "when you click “Check for Updates” in the tray menu. Your audio and your "
+    "text never leave this computer."
+)
+
+
+# ===================================================== hotkey capture (wave 1)
+# Migrated unchanged from the old settings window: press-keys-to-capture with
+# validation, so a typo can never reach config.json and brick startup.
+_QT_MODIFIERS = {
+    QtCore.Qt.Key_Control: "ctrl",
+    QtCore.Qt.Key_Shift: "shift",
+    QtCore.Qt.Key_Alt: "alt",
+    QtCore.Qt.Key_Meta: "win",
+}
+_QT_NAMED = {
+    QtCore.Qt.Key_Space: "space",
+    QtCore.Qt.Key_Return: "enter",
+    QtCore.Qt.Key_Enter: "enter",
+    QtCore.Qt.Key_Tab: "tab",
+    QtCore.Qt.Key_Backspace: "backspace",
+    QtCore.Qt.Key_Delete: "delete",
+    QtCore.Qt.Key_Insert: "insert",
+    QtCore.Qt.Key_Home: "home",
+    QtCore.Qt.Key_End: "end",
+    QtCore.Qt.Key_PageUp: "page_up",
+    QtCore.Qt.Key_PageDown: "page_down",
+    QtCore.Qt.Key_Up: "up",
+    QtCore.Qt.Key_Down: "down",
+    QtCore.Qt.Key_Left: "left",
+    QtCore.Qt.Key_Right: "right",
+}
+_MOD_ORDER = {"ctrl": 0, "alt": 1, "shift": 2, "win": 3}
+
+
+def _qt_event_to_token(event) -> str | None:
+    """Map a Qt key event to a hotkey token, or None if unsupported."""
+    key = event.key()
+    if key in _QT_MODIFIERS:
+        return _QT_MODIFIERS[key]
+    if key in _QT_NAMED:
+        return _QT_NAMED[key]
+    if QtCore.Qt.Key_F1 <= key <= QtCore.Qt.Key_F35:
+        return f"f{key - QtCore.Qt.Key_F1 + 1}"
+    if QtCore.Qt.Key_A <= key <= QtCore.Qt.Key_Z:
+        return chr(ord("a") + key - QtCore.Qt.Key_A)
+    if QtCore.Qt.Key_0 <= key <= QtCore.Qt.Key_9:
+        return chr(ord("0") + key - QtCore.Qt.Key_0)
+    return None
+
+
+def _compose(tokens) -> str:
+    """Canonical 'ctrl+alt+shift+win+<key>' ordering from a set of tokens."""
+    mods = sorted((t for t in tokens if t in _MOD_ORDER), key=lambda t: _MOD_ORDER[t])
+    keys = [t for t in tokens if t not in _MOD_ORDER]
+    return "+".join(mods + keys)
+
+
+_DISPLAY_NAMES = {"ctrl": "Ctrl", "alt": "Alt", "shift": "Shift", "win": "Win"}
+
+
+def pretty_hotkey(value: str) -> str:
+    """'ctrl+win' -> 'Ctrl + Win'. Display only — config keeps the canonical form."""
+    parts = [_DISPLAY_NAMES.get(t, t.replace("_", " ").title())
+             for t in (value or "").split("+") if t]
+    return " + ".join(parts)
+
+
+class HotkeyCaptureEdit(QtWidgets.QLineEdit):
+    """Press-keys-to-capture field. Only ever commits a valid hotkey, so a typo
+    can never reach config.json and brick startup (the old free-text failure).
+
+    Emits ``hotkeyChanged(str)`` when a new valid combo is committed — that is
+    what drives instant-apply.
+    """
+
+    hotkeyChanged = QtCore.Signal(str)
+
+    def __init__(self, initial=""):
+        super().__init__()
+        self.setObjectName("HotkeyEdit")
+        self.setReadOnly(True)
+        self.setPlaceholderText("Click, then press your keys…")
+        self._hotkey = initial or DEFAULT_HOTKEY
+        self._held = {}       # Qt key code -> token, currently down
+        self._preview = ""
+        self.setText(pretty_hotkey(self._hotkey))
+
+    def hotkey(self) -> str:
+        return self._hotkey
+
+    def set_hotkey(self, value: str):
+        changed = value != self._hotkey
+        self._hotkey = value
+        self._held.clear()
+        self._preview = ""
+        self.setText(pretty_hotkey(value))
+        if changed:
+            self.hotkeyChanged.emit(value)
+
+    def focusInEvent(self, e):
+        super().focusInEvent(e)
+        self._held.clear()
+        self._preview = ""
+        self.setText("Press your keys…")
+
+    def focusOutEvent(self, e):
+        super().focusOutEvent(e)
+        # discard any half-typed combo
+        self.setText(pretty_hotkey(self._hotkey))
+
+    def keyPressEvent(self, e):
+        if e.isAutoRepeat():
+            return
+        token = _qt_event_to_token(e)
+        if token is None:
+            return
+        self._held[e.key()] = token
+        self._preview = _compose(self._held.values())
+        self.setText(pretty_hotkey(self._preview) or "…")
+        e.accept()
+
+    def keyReleaseEvent(self, e):
+        if e.isAutoRepeat():
+            return
+        if e.key() not in self._held:
+            return
+        # Commit when the first key of the chord lifts (combo at its maximum).
+        combo = self._preview
+        self._held.clear()
+        if combo and is_valid_hotkey(combo):
+            changed = combo != self._hotkey
+            self._hotkey = combo
+            self.setText(pretty_hotkey(combo))
+            if changed:
+                self.hotkeyChanged.emit(combo)
+        else:
+            self.setText("Unsupported combo — try again")
+        e.accept()
+
+
+# ================================================================== switch
+def _lerp_color(c1: str, c2: str, t: float) -> QtGui.QColor:
+    a, b = QtGui.QColor(c1), QtGui.QColor(c2)
+    return QtGui.QColor(
+        round(a.red() + (b.red() - a.red()) * t),
+        round(a.green() + (b.green() - a.green()) * t),
+        round(a.blue() + (b.blue() - a.blue()) * t))
+
+
+class ToggleSwitch(QtWidgets.QCheckBox):
+    """A monochrome switch. It is a QCheckBox underneath, so isChecked(),
+    setChecked() and toggled() behave exactly as any caller expects — only the
+    painting differs (a stock checkbox in a settings row reads as a form, not
+    as an app)."""
+
+    W, H = 38, 22
+
+    def __init__(self, checked=False):
+        super().__init__()
+        self.setFixedSize(self.W, self.H)
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+        self.setChecked(bool(checked))
+        self._knob = 1.0 if self.isChecked() else 0.0
+        self._anim = QtCore.QPropertyAnimation(self, b"knob", self)
+        self._anim.setDuration(130)
+        self._anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+        self.toggled.connect(self._animate)
+
+    # animated knob position, 0.0 (off) .. 1.0 (on)
+    def _get_knob(self) -> float:
+        return self._knob
+
+    def _set_knob(self, value: float):
+        self._knob = float(value)
+        self.update()
+
+    knob = QtCore.Property(float, _get_knob, _set_knob)
+
+    def _animate(self, on: bool):
+        self._anim.stop()
+        self._anim.setStartValue(self._knob)
+        self._anim.setEndValue(1.0 if on else 0.0)
+        self._anim.start()
+
+    def set_state_silently(self, checked: bool):
+        """Set the switch WITHOUT emitting toggled (and snap the knob to match),
+        for reconciling the UI to a state that changed outside the app (e.g. a
+        launch-at-login toggle flipped in Task Manager)."""
+        checked = bool(checked)
+        self.blockSignals(True)
+        self.setChecked(checked)
+        self.blockSignals(False)
+        self._knob = 1.0 if checked else 0.0
+        self.update()
+
+    def enterEvent(self, e):
+        super().enterEvent(e)
+        self.update()
+
+    def leaveEvent(self, e):
+        super().leaveEvent(e)
+        self.update()
+
+    def paintEvent(self, _):
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.Antialiasing)
+        t = max(0.0, min(1.0, self._knob))
+        radius = self.H / 2 - 0.5
+
+        highlight = self.hasFocus() or self.underMouse()
+        p.setPen(QtGui.QPen(QtGui.QColor(
+            theme.TEXT_2 if highlight else theme.BORDER), 1))
+        p.setBrush(_lerp_color(theme.CARD, theme.ACCENT, t))
+        p.drawRoundedRect(QtCore.QRectF(0.5, 0.5, self.W - 1, self.H - 1),
+                          radius, radius)
+
+        d = self.H - 8
+        x = 4 + t * (self.W - d - 8)
+        p.setPen(QtCore.Qt.NoPen)
+        p.setBrush(_lerp_color(theme.TEXT_2, theme.BG, t))
+        p.drawEllipse(QtCore.QRectF(x, 4, d, d))
+
+
+# ============================================================ rows & sections
+class SettingsRow(QtWidgets.QWidget):
+    """Title (+ optional tag and hint) on the left, one control on the right."""
+
+    def __init__(self, title, control, hint="", tag=""):
+        super().__init__()
+        self.setObjectName("Row")
+        lay = QtWidgets.QHBoxLayout(self)
+        lay.setContentsMargins(12, 11, 12, 11)
+        lay.setSpacing(16)
+
+        left = QtWidgets.QVBoxLayout()
+        left.setContentsMargins(0, 0, 0, 0)
+        left.setSpacing(3)
+        title_row = QtWidgets.QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(7)
+        label = QtWidgets.QLabel(title)
+        label.setProperty("role", "row-title")
+        title_row.addWidget(label)
+        if tag:
+            chip = QtWidgets.QLabel(tag.upper())
+            chip.setProperty("role", "tag")
+            title_row.addWidget(chip)
+        title_row.addStretch(1)
+        left.addLayout(title_row)
+
+        self.hint = QtWidgets.QLabel(hint)
+        self.hint.setProperty("role", "row-hint")
+        self.hint.setWordWrap(True)
+        self.hint.setVisible(bool(hint))
+        left.addWidget(self.hint)
+        lay.addLayout(left, 1)
+
+        if isinstance(control, QtWidgets.QLayout):
+            lay.addLayout(control)
+        else:
+            lay.addWidget(control, 0, QtCore.Qt.AlignVCenter)
+
+    def set_hint(self, text):
+        self.hint.setText(text)
+        self.hint.setVisible(bool(text))
+
+
+class Section(QtWidgets.QWidget):
+    """A titled card of rows, separated by hairlines."""
+
+    def __init__(self, title):
+        super().__init__()
+        outer = QtWidgets.QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(9)
+
+        head = QtWidgets.QLabel(title.upper())
+        head.setProperty("role", "section")
+        outer.addWidget(head)
+
+        card = QtWidgets.QWidget()
+        card.setObjectName("Card")
+        # A 6px inset means a row's hover fill never pokes out of the card's
+        # rounded corners.
+        self._rows = QtWidgets.QVBoxLayout(card)
+        self._rows.setContentsMargins(6, 6, 6, 6)
+        self._rows.setSpacing(0)
+        outer.addWidget(card)
+
+    def add(self, row):
+        if self._rows.count():
+            sep = QtWidgets.QFrame()
+            sep.setObjectName("RowSep")
+            sep.setFixedHeight(1)
+            self._rows.addWidget(sep)
+        self._rows.addWidget(row)
+        return row
+
+
+# ============================================================== microphones
+def _fallback_microphones() -> list[tuple[str, str]]:
+    """Deduped input-capable devices straight from sounddevice."""
+    try:
+        import sounddevice as sd
+    except Exception as e:
+        log.warning("sounddevice unavailable, no microphone list: %s", e)
+        return []
+    try:
+        devices = sd.query_devices()
+    except Exception as e:
+        log.warning("could not query audio devices: %s", e)
+        return []
+    seen, out = set(), []
+    for d in devices:
+        name = d.get("name") if isinstance(d, dict) else None
+        channels = d.get("max_input_channels", 0) if isinstance(d, dict) else 0
+        if name and channels > 0 and name not in seen:
+            seen.add(name)
+            out.append((name, name))
+    return out
+
+
+def _normalize_mic_entries(entries) -> list[tuple[str, str]]:
+    """Accept whatever shape list_microphones() returns and make it (label, name).
+
+    The sibling contract is being written in a parallel branch, so this takes
+    plain names, (label, name) pairs, or dicts rather than assuming one.
+    """
+    out = []
+    for entry in entries or []:
+        if isinstance(entry, str):
+            out.append((entry, entry))
+        elif isinstance(entry, dict):
+            name = entry.get("name") or entry.get("device")
+            if name:
+                out.append((entry.get("label") or name, name))
+        elif isinstance(entry, (tuple, list)) and entry:
+            label = str(entry[0])
+            name = entry[1] if len(entry) > 1 and isinstance(entry[1], str) else label
+            out.append((label, name))
+    return out
+
+
+def microphone_options() -> list[tuple[str, str]]:
+    """[(label, device name)] for the dropdown — one entry per real microphone.
+
+    Prefers ``device_utils.list_microphones()`` (a parallel session's contract,
+    which filters Windows pseudo-devices). Falls back to a deduped sounddevice
+    scan when that function isn't on this branch yet.
+    """
+    try:
+        from rekounts import device_utils
+        lister = getattr(device_utils, "list_microphones", None)
+        if callable(lister):
+            return _normalize_mic_entries(lister())
+    except Exception:
+        log.exception("list_microphones() failed; falling back to raw device scan")
+    return _fallback_microphones()
+
+
+# ================================================================ the page
+class SettingsPage(QtWidgets.QWidget):
+    """Every setting the app has, applied the moment you change it.
+
+    ``on_saved`` is called with no arguments after a change has been persisted —
+    the same live-apply contract the old settings window had.
+    """
+
+    # Coalesce bursts of changes (dragging a spinbox, flipping three switches)
+    # into one live-apply. Persistence is never delayed, only the callback.
+    APPLY_DELAY_MS = 250
+
+    _MODEL_HINT = ("Bigger models are more accurate and slower — Small is a good "
+                   "all-round default. First use of a model downloads it once; "
+                   "switching reloads in the background and dictation keeps "
+                   "working meanwhile.")
+    # While live typing is on the app transcribes with the faster streaming model
+    # for speed, so the chosen model is ignored — say so instead of letting the
+    # control look effective.
+    _MODEL_HINT_LIVE = ("Live typing uses the faster streaming model, so this "
+                        "setting has no effect until you turn Live typing off.")
+
+    test_done = QtCore.Signal(str)
+
+    def __init__(self, config, history=None, on_saved=None, startup_setter=None,
+                 startup_getter=None):
+        super().__init__()
+        self.config = config
+        self.history = history
+        self._on_saved = on_saved or (lambda: None)
+        self._startup_setter = startup_setter or _default_startup_setter
+        # Reads the REAL launch-at-login state (production wires the registry
+        # query in via the Dashboard). Defaults to the stored flag so tests and
+        # standalone construction stay hermetic — no registry access.
+        self._startup_getter = startup_getter or (
+            lambda: bool(self.config.get("launch_on_startup")))
+
+        self._apply_timer = QtCore.QTimer(self)
+        self._apply_timer.setSingleShot(True)
+        self._apply_timer.setInterval(self.APPLY_DELAY_MS)
+        self._apply_timer.timeout.connect(self._flush_apply)
+
+        root = QtWidgets.QVBoxLayout(self)
+        left, top, right, bottom = theme.PAGE_MARGINS
+        root.setContentsMargins(left, top, 0, 0)
+        root.setSpacing(14)
+
+        title = QtWidgets.QLabel("Settings")
+        title.setProperty("role", "page-title")
+        root.addWidget(title)
+
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        body = QtWidgets.QWidget()
+        self._body = QtWidgets.QVBoxLayout(body)
+        self._body.setContentsMargins(0, 0, right, bottom)
+        self._body.setSpacing(22)
+        scroll.setWidget(body)
+        root.addWidget(scroll, 1)
+
+        self._build_general()
+        self._build_audio()
+        self._build_behavior()
+        self._build_system()
+        self._build_privacy()
+        self._body.addStretch(1)
+
+        # The model selector is inert while live typing is on (the app uses the
+        # streaming model then) — reflect that from the start, not just on change.
+        self._sync_model_availability(bool(self.config.get("live_typing")))
+
+    # ----------------------------------------------------------- persistence
+    def _persist(self, key, value):
+        """Write one setting, then schedule the live-apply."""
+        self.config.set(key, value)
+        try:
+            self.config.save()
+        except Exception:
+            log.exception("could not write config.json")
+            return
+        self._schedule_apply()
+
+    def _schedule_apply(self):
+        self._apply_timer.start()
+
+    def _flush_apply(self):
+        """Run the app's live-apply now. Never lets a failure escape into Qt."""
+        self._apply_timer.stop()
+        try:
+            self._on_saved()
+        except Exception:
+            log.exception("live-apply callback failed")
+
+    def hideEvent(self, e):
+        # Changing a setting and immediately closing the Hub must still apply.
+        super().hideEvent(e)
+        if self._apply_timer.isActive():
+            self._flush_apply()
+
+    # -------------------------------------------------------- control makers
+    def _switch(self, key, on_change=None):
+        sw = ToggleSwitch(bool(self.config.get(key)))
+
+        def handler(checked, key=key):
+            self._persist(key, bool(checked))
+            if on_change:
+                on_change(bool(checked))
+
+        sw.toggled.connect(handler)
+        return sw
+
+    def _combo(self, items, current, on_change, width=None):
+        """items: [(label, value)]. on_change receives the selected value."""
+        box = QtWidgets.QComboBox()
+        for label, value in items:
+            box.addItem(label, value)
+        idx = box.findData(current)
+        box.setCurrentIndex(idx if idx >= 0 else 0)
+        box.setFixedWidth(width or theme.CONTROL_W)
+        box.currentIndexChanged.connect(
+            lambda _i, b=box: on_change(b.currentData()))
+        return box
+
+    @staticmethod
+    def _ghost(text, slot):
+        btn = QtWidgets.QPushButton(text)
+        btn.setObjectName("Ghost")
+        btn.clicked.connect(slot)
+        return btn
+
+    # ------------------------------------------------------------- General
+    def _build_general(self):
+        sec = Section("General")
+
+        self.hotkey = HotkeyCaptureEdit(self.config.get("hotkey"))
+        self.hotkey.setFixedWidth(theme.CONTROL_W - 78)
+        self.hotkey.hotkeyChanged.connect(self._hotkey_changed)
+        reset = self._ghost("Reset", lambda: self.hotkey.set_hotkey(DEFAULT_HOTKEY))
+        reset.setFixedWidth(70)
+        hk = QtWidgets.QHBoxLayout()
+        hk.setContentsMargins(0, 0, 0, 0)
+        hk.setSpacing(8)
+        hk.addWidget(self.hotkey)
+        hk.addWidget(reset)
+        self.hotkey_row = sec.add(SettingsRow(
+            "Dictation hotkey", hk,
+            "Hold to talk · double-tap for hands-free · tap again to stop."))
+
+        self.language = self._combo(
+            list(LANGUAGES),
+            self.config.get("language"),
+            lambda v: self._persist("language", v))
+        sec.add(SettingsRow("Language", self.language,
+                            "Auto-detect costs a little accuracy — pick a "
+                            "language if you always dictate in one."))
+
+        # distil-large-v3 / large-v3-turbo return to this list once their files
+        # are published to the release-host manifest (rekounts/models.py) —
+        # offering a model the host can't serve is a dead dropdown entry.
+        self.model = self._combo(
+            [("Base — fastest, least accurate", "base"),
+             ("Small — balanced (recommended)", "small"),
+             ("Medium — more accurate, slower", "medium")],
+            self.config.get("model"),
+            self._model_changed)
+        self.model_row = sec.add(SettingsRow(
+            "Speech model", self.model, self._MODEL_HINT))
+
+        self.device = self._combo(
+            [("CPU — works everywhere", "cpu"),
+             ("Auto — use the GPU when it actually works", "auto")],
+            self.config.get("device"),
+            lambda v: self._persist("device", v))
+        sec.add(SettingsRow(
+            "Processing", self.device,
+            "Auto tries your NVIDIA GPU (needs the CUDA libraries — see the "
+            "README) and quietly falls back to CPU if it can't run there. Big "
+            "models are only fast on a GPU."))
+
+        self._body.addWidget(sec)
+
+    def _sync_model_availability(self, live_on):
+        """Live typing overrides the chosen model with the streaming model, so
+        grey the control out and explain why rather than letting it look live."""
+        self.model.setEnabled(not live_on)
+        self.model_row.set_hint(self._MODEL_HINT_LIVE if live_on else self._MODEL_HINT)
+
+    def _hotkey_changed(self, combo):
+        # Belt-and-suspenders: the capture widget only ever emits valid combos,
+        # but an invalid hotkey in config.json breaks the listener at startup.
+        if not is_valid_hotkey(combo):
+            self.hotkey_row.set_hint(f"“{combo}” isn’t a usable hotkey — not saved.")
+            return
+        self.hotkey_row.set_hint(
+            "Hold to talk · double-tap for hands-free · tap again to stop.")
+        self._persist("hotkey", combo)
+
+    def _model_changed(self, value):
+        self._persist("model", value)
+
+    # --------------------------------------------------------------- Audio
+    def _build_audio(self):
+        sec = Section("Audio")
+
+        self.mic = QtWidgets.QComboBox()
+        self.mic.setFixedWidth(theme.CONTROL_W)
+        self._populate_mics(self.config.get("microphone"))
+        self.mic.currentIndexChanged.connect(
+            lambda _i: self._persist("microphone", self.mic.currentData()))
+
+        self.refresh_btn = self._ghost("Refresh", self._refresh_mics)
+        self.test_btn = self._ghost("Test", self._test_mic)
+        mic_col = QtWidgets.QVBoxLayout()
+        mic_col.setContentsMargins(0, 0, 0, 0)
+        mic_col.setSpacing(8)
+        mic_col.addWidget(self.mic, 0, QtCore.Qt.AlignRight)
+        btns = QtWidgets.QHBoxLayout()
+        btns.setContentsMargins(0, 0, 0, 0)
+        btns.setSpacing(8)
+        btns.addStretch(1)
+        btns.addWidget(self.refresh_btn)
+        btns.addWidget(self.test_btn)
+        mic_col.addLayout(btns)
+
+        self.mic_row = sec.add(SettingsRow(
+            "Microphone", mic_col,
+            "System default follows whatever Windows is using."))
+        self.test_done.connect(self._show_test_result)
+
+        self._body.addWidget(sec)
+
+    def _populate_mics(self, selected):
+        """(Re)fill the dropdown, keeping the current selection if it still exists."""
+        self.mic.blockSignals(True)
+        self.mic.clear()
+        self.mic.addItem("System default", None)
+        for label, name in microphone_options():
+            self.mic.addItem(label, name)
+        idx = self.mic.findData(selected)
+        if idx >= 0:
+            self.mic.setCurrentIndex(idx)
+        self.mic.blockSignals(False)
+
+    def _refresh_mics(self):
+        self._populate_mics(self.mic.currentData())
+        self.mic_row.set_hint("Microphone list refreshed.")
+
+    def showEvent(self, e):
+        # The device list is frozen at construction; re-query each time the page
+        # is shown so hot-plugged mics appear without a restart.
+        super().showEvent(e)
+        self._populate_mics(self.mic.currentData() or self.config.get("microphone"))
+        # Likewise re-check launch-at-login, so a Task Manager disable made since
+        # the page was built is reflected rather than shown stale.
+        self._sync_launch_switch()
+
+    def _test_mic(self):
+        self.test_btn.setEnabled(False)
+        self.mic_row.set_hint("Listening…")
+        import threading
+        threading.Thread(target=self._run_test, args=(self.mic.currentData(),),
+                         daemon=True).start()
+
+    def _run_test(self, name):
+        try:
+            import numpy as np
+            import sounddevice as sd
+
+            from rekounts.audio_utils import normalize_gain
+            index = resolve_input_device(name, sd.query_devices())
+            rec = sd.rec(int(2 * 16000), samplerate=16000, channels=1,
+                         dtype="float32", device=index)
+            sd.wait()
+            audio = normalize_gain(rec.flatten())
+            rms = float(np.sqrt(np.mean(audio ** 2))) if len(audio) else 0.0
+            self.test_done.emit(_LEVEL_MESSAGES[classify_level(rms)])
+        except Exception as e:
+            self.test_done.emit(f"Microphone error: {e}")
+
+    @QtCore.Slot(str)
+    def _show_test_result(self, msg):
+        self.mic_row.set_hint(msg)
+        self.test_btn.setEnabled(True)
+
+    # ------------------------------------------------------------ Behavior
+    def _build_behavior(self):
+        sec = Section("Behavior")
+
+        self.insertion = self._combo(
+            [("Paste — fastest", "paste"), ("Type keystrokes", "keystroke")],
+            self.config.get("insertion_mode"),
+            lambda v: self._persist("insertion_mode", v))
+        sec.add(SettingsRow(
+            "Insert text by", self.insertion,
+            "Keystrokes are slower but work in apps that block paste."))
+
+        self.live_typing = self._switch("live_typing", self._sync_model_availability)
+        sec.add(SettingsRow(
+            "Live typing", self.live_typing,
+            "Types words while you speak. Whisper rewrites earlier words as it "
+            "hears more, so text can churn before it settles.",
+            tag="Experimental"))
+
+        self.strip_fillers = self._switch("strip_fillers")
+        sec.add(SettingsRow("Remove filler words", self.strip_fillers,
+                            "Drops “um” and “uh”."))
+        self.strip_discourse = self._switch("strip_discourse_fillers")
+        sec.add(SettingsRow(
+            "Remove hedge phrases", self.strip_discourse,
+            "Drops “you know”, “I mean”, “like”, “right” when commas mark "
+            "them as asides — “I like it” is never touched."))
+        self.auto_cap = self._switch("auto_capitalize")
+        sec.add(SettingsRow("Auto-capitalize sentences", self.auto_cap))
+        self.fix_punct = self._switch("fix_punctuation_spacing")
+        sec.add(SettingsRow("Fix punctuation spacing", self.fix_punct))
+        self.collapse_repeats = self._switch("collapse_repeats")
+        sec.add(SettingsRow("Remove repeated words", self.collapse_repeats,
+                            "Collapses accidental stutters (“the the” → “the”)."))
+
+        self.preroll = self._switch("preroll_enabled")
+        sec.add(SettingsRow(
+            "Pre-roll buffer", self.preroll,
+            "Catches the first syllable. Holds the microphone stream open, so "
+            "Windows shows the mic-in-use indicator continuously — the audio "
+            "stays in memory and is never written to disk."))
+
+        self.max_minutes = QtWidgets.QSpinBox()
+        self.max_minutes.setRange(0, 120)
+        self.max_minutes.setSuffix(" min")
+        self.max_minutes.setSpecialValueText("No limit")
+        self.max_minutes.setFixedWidth(110)
+        self.max_minutes.setValue(
+            int(round((self.config.get("max_recording_seconds") or 0) / 60)))
+        self.max_minutes.valueChanged.connect(
+            lambda v: self._persist("max_recording_seconds", int(v) * 60))
+        sec.add(SettingsRow(
+            "Maximum recording length", self.max_minutes,
+            "Safety net for a hands-free recording you forget to stop."))
+
+        self.filter_halluc = self._switch("filter_hallucinations")
+        sec.add(SettingsRow(
+            "Ignore phantom phrases", self.filter_halluc,
+            "Silence sometimes transcribes as “Thank you.” — dropped when it is "
+            "the entire result."))
+
+        self._body.addWidget(sec)
+
+    # -------------------------------------------------------------- System
+    def _build_system(self):
+        sec = Section("System")
+
+        # Start from the REAL launch-at-login state, not just the stored flag:
+        # if the user disabled us in Task Manager's Startup tab, Windows skips us
+        # at login and this switch must say so rather than still reading ON.
+        try:
+            launch_on = bool(self._startup_getter())
+        except Exception:
+            launch_on = bool(self.config.get("launch_on_startup"))
+        self.launch_startup = ToggleSwitch(launch_on)
+        self.launch_startup.toggled.connect(self._launch_toggled)
+        self.startup_row = sec.add(SettingsRow(
+            "Launch at login", self.launch_startup,
+            "Start Rekounts automatically when you sign in to Windows."))
+
+        self.sound_effects = self._switch("sound_effects")
+        sec.add(SettingsRow("Sound effects", self.sound_effects,
+                            "Subtle cues when dictation starts and stops."))
+
+        self.show_pill = self._switch("show_pill")
+        sec.add(SettingsRow("Show dictation pill", self.show_pill,
+                            "The small recording indicator at the bottom of the screen."))
+
+        self.notifications = self._switch("show_notifications")
+        sec.add(SettingsRow("Tray notifications", self.notifications,
+                            "Messages like “Settings applied.” and error reports."))
+
+        self._body.addWidget(sec)
+
+    def _launch_toggled(self, checked):
+        """User flipped the switch: persist intent, then apply it to the registry
+        (enable() also clears any Task Manager disable, so ON actually takes)."""
+        self._persist("launch_on_startup", bool(checked))
+        self._apply_startup(bool(checked))
+
+    def _apply_startup(self, enabled):
+        """Write the registry entry too, so the switch is true immediately
+        rather than at the next launch."""
+        try:
+            self._startup_setter(bool(enabled))
+        except Exception as e:
+            log.warning("could not update launch-at-login entry: %s", e)
+            self.startup_row.set_hint(f"Could not update the login entry: {e}")
+
+    def _sync_launch_switch(self):
+        """Re-reflect the real launch-at-login state whenever Settings is shown,
+        so a Task Manager disable done while the app was running is picked up.
+        Does NOT call the setter — flipping the visible switch here must not
+        rewrite the registry, only mirror it (and keep config honest so an
+        unrelated Save can't re-apply a stale value)."""
+        try:
+            real = bool(self._startup_getter())
+        except Exception:
+            return
+        if real == self.launch_startup.isChecked():
+            return
+        self.launch_startup.set_state_silently(real)
+        self.config.set("launch_on_startup", real)
+        try:
+            self.config.save()
+        except Exception:
+            log.exception("could not persist reconciled launch_on_startup")
+
+    # ------------------------------------------------------- Data & Privacy
+    def _build_privacy(self):
+        sec = Section("Data & Privacy")
+
+        self.history_enabled = self._switch("history_enabled", self._apply_history)
+        sec.add(SettingsRow(
+            "Save dictation history", self.history_enabled,
+            "Off means nothing is written to disk — the Dictation page stays empty."))
+
+        self.clear_btn = QtWidgets.QPushButton("Clear all…")
+        self.clear_btn.setObjectName("Danger")
+        self.clear_btn.clicked.connect(self._clear_history)
+        self.clear_row = sec.add(SettingsRow(
+            "Clear saved dictations", self.clear_btn, self._history_count_hint()))
+
+        data_dir = str(default_config_path().parent)
+        open_btn = self._ghost("Open folder", lambda: self._open_folder(data_dir))
+        sec.add(SettingsRow("Where your data lives", open_btn, data_dir))
+
+        self._body.addWidget(sec)
+
+        note = QtWidgets.QLabel(NETWORK_STATEMENT)
+        note.setWordWrap(True)
+        note.setProperty("role", "hint")
+        self._body.addWidget(note)
+
+    def _history_count_hint(self) -> str:
+        try:
+            n = self.history.count() if self.history else 0
+        except Exception:
+            return ""
+        if not n:
+            return "Nothing saved yet."
+        return f"{n} dictation{'' if n == 1 else 's'} saved on this machine."
+
+    def _apply_history(self, enabled):
+        # History.enabled is deliberately mutable so the privacy switch takes
+        # effect on the very next dictation, with no rebuild and no restart.
+        if self.history is not None:
+            self.history.enabled = bool(enabled)
+
+    def _clear_history(self):
+        if self.history is None or not self.history.count():
+            return
+        ok = QtWidgets.QMessageBox.question(
+            self, "Clear all history",
+            "Permanently delete every saved dictation? This cannot be undone.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No)
+        if ok == QtWidgets.QMessageBox.Yes:
+            self.history.clear_all()
+            self.clear_row.set_hint(self._history_count_hint())
+
+    @staticmethod
+    def _open_folder(path):
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(path))
+
+
+def _default_startup_setter(enabled: bool):
+    from rekounts import startup
+    startup.set_enabled(bool(enabled))

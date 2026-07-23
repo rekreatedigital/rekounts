@@ -1,0 +1,28 @@
+name: Feature request
+description: An idea that would make dictation better
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One thing to know up front: Rekounts is local-first and
+        privacy-first. Features that would send audio or text off your
+        machine are out of scope by design.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's the itch?
+      description: What are you trying to do that the app makes hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else?
+      description: Alternatives you considered, how another tool does it, mockups…
