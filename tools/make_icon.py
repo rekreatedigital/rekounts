@@ -1,4 +1,5 @@
-"""Generate the Rekounts icon — ``assets/icon.ico`` and the installer's header.
+"""Generate the Rekounts icon — ``assets/icon.ico``, ``assets/icon.icns`` and
+the installer's header.
 
 The icon is committed to the repo (the build must not depend on anything being
 generated at package time), but it is *generated*, never hand-drawn, so it can be
@@ -40,6 +41,7 @@ except ImportError:                                          # pragma: no cover
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ICON_PATH = REPO_ROOT / "assets" / "icon.ico"
+ICNS_PATH = REPO_ROOT / "assets" / "icon.icns"
 WIZARD_DIR = REPO_ROOT / "installer"
 
 # The sizes Windows actually asks for: 16/20/24/32/40/48 across the DPI scales
@@ -73,6 +75,18 @@ _BARS = (
 # Drawing at 8× and downsampling is what antialiases the tile's rounded corners
 # and the bars' caps: Pillow's shape primitives have hard edges of their own.
 _SUPERSAMPLE = 8
+
+# ...but 8× a 1024 px icon (the .icns needs one) is an 8192² RGBA buffer, a
+# quarter of a gigabyte to draw six rectangles. Cap the intermediate instead.
+# 2048 is chosen so every size the .ico uses (≤256) keeps the full 8× and the
+# committed .ico stays byte-for-byte reproducible; only the two large .icns
+# entries drop to 4× and 2×, where the extra samples buy nothing visible anyway
+# because the geometry is huge relative to a pixel.
+_MAX_SUPERSAMPLED_PX = 2048
+
+
+def _supersample_for(size: int) -> int:
+    return max(2, min(_SUPERSAMPLE, _MAX_SUPERSAMPLED_PX // size))
 
 # At and below this size the bars are snapped to whole device pixels instead of
 # being antialiased down with everything else. A bar is 2.6/32 of the width, so
@@ -117,7 +131,7 @@ def _draw_hinted_bars(img: Image.Image, size: int) -> None:
 def _render(size: int) -> Image.Image:
     """The mark rendered as one RGBA image ``size``×``size``."""
     hinted = size <= _HINT_AT_OR_BELOW
-    ss = size * _SUPERSAMPLE
+    ss = size * _supersample_for(size)
     scale = ss / _VIEWBOX
     img = Image.new("RGBA", (ss, ss), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -218,6 +232,92 @@ def build(path: Path = ICON_PATH) -> Path:
     return path
 
 
+# --- macOS: the .icns the .app bundle needs ---------------------------------
+#
+# ``BUNDLE(icon=...)`` in Rekounts-macos.spec needs a real .icns. A Windows .ico
+# there is not an error, it is simply ignored — which is why the groundwork spec
+# carried ``icon=None`` and a note saying an .icns was "part of the
+# hardware-verification pass". It is not: the format is fully specified and
+# needs no Mac to write, so it is generated here from the same ``_render`` as
+# every other size, and the Mac hour is spent on things that actually need a Mac.
+#
+# The container is trivially simple: b"icns", the total file length as a 4-byte
+# big-endian integer, then one chunk per image — a 4-byte OSType, a 4-byte
+# big-endian length that INCLUDES the 8-byte chunk header, and the payload.
+#
+# Every payload below is a PNG. All ten of these OSTypes accept PNG data on
+# macOS 10.7+, and this is exactly the set Apple's own ``iconutil`` emits from a
+# complete ``.iconset`` — so the file is indistinguishable from one built on a
+# Mac, which is the property that matters when nobody here has one.
+#
+# NOT included: the legacy ``is32``/``il32``/``ic##`` RLE-plus-mask pairs for
+# pre-10.7 systems. LSMinimumSystemVersion in the spec is 12.0.
+_ICNS_TYPES = (
+    (b"icp4", 16),     # 16x16
+    (b"icp5", 32),     # 32x32
+    (b"ic11", 32),     # 16x16@2x
+    (b"ic12", 64),     # 32x32@2x
+    (b"ic07", 128),    # 128x128
+    (b"ic13", 256),    # 128x128@2x
+    (b"ic08", 256),    # 256x256
+    (b"ic14", 512),    # 256x256@2x
+    (b"ic09", 512),    # 512x512
+    (b"ic10", 1024),   # 512x512@2x (Retina "1024")
+)
+_ICNS_MAGIC = b"icns"
+
+
+def build_icns(path: Path = ICNS_PATH) -> Path:
+    """Write the macOS icon bundle and return where it went.
+
+    Sizes are rendered once each and reused across the OSTypes that want the
+    same pixel dimensions (ic11/icp5 are both 32 px, ic13/ic08 both 256, …), so
+    a 256 px chunk and its @2x twin are the same bytes — as they are in an
+    iconutil-built file.
+    """
+    rendered = {}
+    chunks = b""
+    for ostype, size in _ICNS_TYPES:
+        if size not in rendered:
+            rendered[size] = _png_bytes(_render(size))
+        blob = rendered[size]
+        chunks += ostype + struct.pack(">I", len(blob) + 8) + blob
+
+    total = len(_ICNS_MAGIC) + 4 + len(chunks)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(_ICNS_MAGIC + struct.pack(">I", total) + chunks)
+    return path
+
+
+def describe_icns(path: Path = ICNS_PATH) -> list[tuple[str, int, int]]:
+    """Parse the .icns back: ``(OSType, pixel width, byte length)`` each.
+
+    Reading our own output back is the check worth having — the same reason
+    :func:`describe` exists. The width is read out of the PNG's IHDR rather than
+    assumed from the OSType, so a chunk labelled ``ic09`` that actually holds a
+    256 px image (the mistake that makes a Retina Dock icon look soft) is caught.
+    """
+    blob = path.read_bytes()
+    if blob[:4] != _ICNS_MAGIC:
+        raise ValueError("not an .icns (bad magic)")
+    declared = struct.unpack_from(">I", blob, 4)[0]
+    if declared != len(blob):
+        raise ValueError(
+            f"header says {declared} bytes, file is {len(blob)}")
+    out, offset = [], 8
+    while offset < len(blob):
+        ostype = blob[offset:offset + 4]
+        length = struct.unpack_from(">I", blob, offset + 4)[0]
+        payload = blob[offset + 8:offset + length]
+        if payload[:8] != b"\x89PNG\r\n\x1a\n":
+            raise ValueError(f"{ostype.decode()} chunk is not a PNG")
+        # IHDR width: 8 bytes signature, 4 length, 4 "IHDR", then the width.
+        width = struct.unpack_from(">I", payload, 16)[0]
+        out.append((ostype.decode("ascii"), width, len(payload)))
+        offset += length
+    return out
+
+
 def build_wizard_images(directory: Path = WIZARD_DIR) -> list[Path]:
     """Write the installer's header bitmaps and return their paths."""
     written = []
@@ -262,6 +362,10 @@ def main() -> int:
     print(f"wrote {out.relative_to(REPO_ROOT)}  ({out.stat().st_size:,} bytes)")
     for w, h, kind, length in describe(out):
         print(f"  {w:>3}x{h:<3}  {kind}  {length:>7,} bytes")
+    icns = build_icns()
+    print(f"wrote {icns.relative_to(REPO_ROOT)}  ({icns.stat().st_size:,} bytes)")
+    for ostype, width, length in describe_icns(icns):
+        print(f"  {ostype}  {width:>4}px  {length:>7,} bytes")
     for bmp in build_wizard_images():
         print(f"wrote {bmp.relative_to(REPO_ROOT)}  ({bmp.stat().st_size:,} bytes)")
     return 0

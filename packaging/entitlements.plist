@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Entitlements for the hardened-runtime signature of dist/Rekounts.app.
+
+  NOT YET USED BY ANY BUILD. Signing needs the owner's Apple Developer account
+  ($99/yr) — docs/macos-packaging.md spells out the full procedure and what it
+  costs. This file exists so that when the account arrives, the signing step is
+  one command and not a research task, and so the list can be reviewed now,
+  while the reasoning is fresh, rather than under release pressure.
+
+  Reviewed against a from-source reading of what Rekounts loads. Nothing here
+  has been exercised by an actual codesign run.
+
+  Three entitlements, and no more. Every extra one is attack surface, is
+  something a notarization reviewer has to accept, and would weaken the claim on
+  the tin — a dictation app that asks for the address book has explaining to do.
+  Deliberately ABSENT and worth being absent:
+
+    * com.apple.security.app-sandbox — Rekounts cannot be sandboxed. The whole
+      app is a global hotkey listener that synthesizes keystrokes into other
+      applications; that is the opposite of a sandbox. (It is also not required
+      outside the Mac App Store, which is not the distribution channel — see
+      docs/macos-packaging.md.)
+    * com.apple.security.network.* — the app makes exactly two outbound
+      requests, both user-initiated (the one-time model download and the update
+      check), and neither needs an entitlement outside the sandbox. Declaring
+      network entitlements on an app whose selling point is "your audio never
+      leaves this machine" would be actively misleading.
+    * com.apple.security.automation.apple-events — the paste path posts CGEvents
+      at the HID tap, not AppleScript. The consent it needs is Accessibility,
+      which is a TCC grant the user makes in System Settings, not an
+      entitlement.
+    * com.apple.security.cs.allow-jit — CPython does not JIT, and neither
+      ctranslate2 nor onnxruntime asks for a JIT mapping. The
+      allow-unsigned-executable-memory below is the weaker one that is actually
+      needed.
+-->
+<plist version="1.0">
+<dict>
+  <!-- CPython's ctypes trampolines and the native wheels' loaders write to
+       pages they then execute. Without this the hardened runtime kills the
+       process at import time, before any Rekounts code runs. -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+
+  <!-- PyInstaller ships the pyobjc, ctranslate2, onnxruntime, av and PySide6
+       dylibs inside the bundle. Library validation would refuse to load any
+       library not signed by the same Team ID, i.e. all of them. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+
+  <!-- Declares microphone use. This is the entitlement half; the user-facing
+       half is NSMicrophoneUsageDescription in Rekounts-macos.spec's info_plist,
+       and macOS terminates the app on first mic open if that string is absent. -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+</dict>
+</plist>
