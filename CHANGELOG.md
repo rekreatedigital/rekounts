@@ -26,16 +26,31 @@ rest was typed into whatever you had just opened.
 - **Long text is now handed over in a single operation**, so it either arrives
   complete and correct or does not arrive at all. It can no longer be
   half-delivered, interleaved with your typing, or split across two apps.
-- **Short text still types normally**, character by character, which is what
-  live typing needs and where the clipboard is better left alone.
+- **Short text is still typed as real keystrokes**, which is what live typing
+  needs and where the clipboard is better left alone.
 - **The transcript goes wherever your cursor is when dictation ends.** Start
   talking in one app, wander through others while you speak, finish with a
   different text box focused — the whole transcript lands in that text box.
 - **Nothing is ever lost.** If there is no text field to deliver into, the
   transcript is copied to your clipboard and you are told so — on top of
   always being saved to History.
+- **Live typing still never touches your clipboard.** Words typed while you
+  are still speaking are always sent as real keystrokes, so nothing you had
+  copied is overwritten mid-sentence.
+- **If a key is still held down**, typing now stops rather than pushing the
+  rest of the message through a modified keyboard and mangling it. You get the
+  whole transcript on your clipboard and a note saying why.
+- New setting, **Behavior → Paste long dictations** (on by default). It only
+  applies in keystroke mode. Turn it off if your app ignores Ctrl+V and you
+  would rather have a long dictation typed literally.
 - Emoji and other non-BMP characters are no longer at risk of arriving
   half-formed.
+
+One honest limitation: Windows gives no way to tell whether an app actually
+accepted a paste. If yours silently ignores Ctrl+V, a long dictation in
+keystroke mode will be reported as delivered when it was not — it is still in
+History, and turning **Paste long dictations** off avoids the situation
+entirely.
 
 ## [0.3.0] — 2026-07-24
 
