@@ -769,6 +769,15 @@ class SettingsPage(QtWidgets.QWidget):
         sec.add(SettingsRow("Tray notifications", self.notifications,
                             "Messages like “Settings applied.” and error reports."))
 
+        # The app's only optional network access, so the description says
+        # plainly what turning it on does — see docs/privacy.md. Takes effect at
+        # the next launch: the check is scheduled once, when the tray is built.
+        self.auto_updates = self._switch("auto_check_updates")
+        sec.add(SettingsRow(
+            "Check for updates automatically", self.auto_updates,
+            "Off by default. When on, Rekounts asks GitHub once per launch "
+            "whether there is a newer release, and only speaks up if there is."))
+
         self._body.addWidget(sec)
 
     def _launch_toggled(self, checked):

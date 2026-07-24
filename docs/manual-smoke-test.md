@@ -101,8 +101,15 @@ applies on its own within a moment. Throughout this section the app must
 
 - [ ] **Microphone** and **Language** submenus show the current selection
       checked, and switching applies without opening Settings.
-- [ ] **Check for Updates** → toast with the latest GitHub commit (or a clean
-      "Could not reach GitHub" if offline — it must not hang or crash).
+- [ ] **Check for Updates** → a toast naming the latest GitHub *release*: either
+      "You are on the latest release" or "Rekounts X.Y.Z is available". Offline,
+      a clean "Could not reach GitHub" — it must not hang or crash.
+- [ ] If it offered an update, **clicking the toast** opens that release's page
+      in your browser. (To exercise this without waiting for a real release,
+      temporarily lower `__version__` in a source run.)
+- [ ] Settings → System → **Check for updates automatically** is **off** on a
+      fresh install. Turn it on, restart the app, and confirm it stays silent
+      when you are already up to date.
 - [ ] **Help** → opens the project README in your browser.
 - [ ] **Quit** → tray icon and pill disappear, process exits, the mic is
       released.
@@ -208,8 +215,36 @@ build.bat
       into the bundle.
 - [ ] Right-click `Rekounts.exe` → Properties → Details shows the version,
       company and copyright.
+- [ ] `Rekounts.exe` shows the **waveform icon** in Explorer (not the generic
+      one), and so does the tray icon and the Hub's title bar / taskbar button.
 - [ ] Ideally, test on a **second PC with no Python installed** — unzip, run,
       click through the SmartScreen warning, and confirm the model downloads.
+
+## The installer
+
+`build.bat` also produces `dist\Rekounts-Setup-<version>.exe`. Most of this is
+covered by an automated pass (see the PR for `feat/icon-installer-updates`), but
+the wizard's own pages need eyes.
+
+- [ ] Running Setup shows **no UAC prompt** at any point.
+- [ ] The wizard shows the **GPL-3.0 licence**, then an **install folder** page
+      defaulting to `%LOCALAPPDATA%\Programs\Rekounts`, then the two optional
+      tasks (desktop shortcut, start at sign-in) — both **unticked**.
+- [ ] The wizard's header shows the Rekounts mark, and `Setup.exe` itself shows
+      the icon in Explorer.
+- [ ] Finish with **Launch Rekounts** ticked → the app starts.
+- [ ] The Start Menu entry works, and **Settings → Apps** lists *Rekounts* with
+      the right version and publisher.
+- [ ] If you ticked "start at sign-in", **Settings → System → Launch at login**
+      inside the app reads **ON**. Turn it off there and the registry value goes
+      away — one switch, two front doors.
+- [ ] Re-run Setup **while Rekounts is running** → it asks you to close the app
+      rather than failing or corrupting the install.
+- [ ] Re-run Setup with it closed → installs over the top, and your dictation
+      history and settings are still there afterwards.
+- [ ] Uninstall from **Settings → Apps**. The dialog offering to delete your
+      data appears with the box **unticked**; leave it unticked and confirm
+      `%APPDATA%\Rekounts` still exists afterwards, program gone.
 
 ## CPU vs GPU notes
 

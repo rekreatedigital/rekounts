@@ -7,6 +7,54 @@ The version string lives in one place — `rekounts/__init__.py` — and
 everything else (`pyproject.toml`, the `.exe` file properties) reads it from
 there.
 
+## [Unreleased]
+
+### There is a real installer now
+
+Download `Rekounts-Setup-<version>.exe` from the releases page and run it.
+
+- **No administrator rights and no UAC prompt.** It installs for your account
+  only, into `%LOCALAPPDATA%\Programs\Rekounts`, and shows up in
+  **Settings → Apps** with a proper uninstaller.
+- You get the **GPL-3.0 licence** to read, a choice of install folder, a Start
+  Menu shortcut, and two optional boxes: a desktop shortcut, and starting
+  Rekounts when you sign in. That last one is the *same* switch as
+  Settings → System → Launch at login, not a second competing one — flip it in
+  either place and both agree.
+- **Upgrading** is just running the newer installer. It asks you to close
+  Rekounts if it is running, keeps your existing install folder, and remembers
+  whether you had launch-at-login on.
+- **Uninstalling leaves your data alone.** Your settings, dictation history and
+  downloaded speech model live in `%APPDATA%\Rekounts` and are *not* touched —
+  the uninstaller offers a clearly-labelled checkbox if you do want them gone,
+  and it starts unticked.
+
+The **portable ZIP** is still there and still supported — unzip it anywhere and
+run `Rekounts.exe`. Nothing about it changed; it is simply no longer the only
+option.
+
+### An actual icon
+
+Rekounts has its official icon: the monochrome waveform mark from the website,
+now on the `.exe` in Explorer, the taskbar, the Start Menu, the app's windows,
+the installer, and the system tray. Previously the tray drew its own microphone
+glyph in code and the `.exe` had no icon at all.
+
+### Check for Updates now checks releases
+
+- It compares the version you are running against the newest **release** on
+  GitHub, instead of reporting the latest commit on `master` — a commit hash
+  told you nothing about whether you were out of date. It now says plainly
+  whether there is something newer, and **clicking the notification opens the
+  release page**.
+- New **Check for updates automatically** switch (Settings → System), **off by
+  default**. With it on, Rekounts makes that one request about ten seconds after
+  each launch and stays completely silent unless there is genuinely a newer
+  release. It still downloads and installs nothing on its own.
+
+The privacy page has been updated to match — see
+[docs/privacy.md](docs/privacy.md) for exactly what that request contains.
+
 ## [0.3.0] — 2026-07-24
 
 The first public release.

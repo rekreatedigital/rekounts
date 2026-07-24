@@ -32,23 +32,47 @@ moments the app touches the network, and the
 
 ## Install — the easy way (no Python)
 
-1. Download the `Rekounts` folder (or the ZIP someone shared with you) and
-   unzip it **anywhere you like** — your Desktop, Documents, wherever. Keep the
-   folder together; `Rekounts.exe` needs the files next to it.
-2. Double-click **`Rekounts.exe`**.
-3. **Windows will probably warn you.** You will see *"Windows protected your PC"*
-   — click **More info**, then **Run anyway**. This happens because the app is
-   not code-signed (a signing certificate costs money; it is a future decision),
-   not because anything is wrong with it. You only have to do this once.
+1. Download **`Rekounts-Setup-<version>.exe`** from the
+   [latest release](https://github.com/rekreatedigital/rekounts/releases/latest)
+   and run it.
+2. **Windows will probably warn you.** You will see *"Windows protected your PC"*
+   — click **More info**, then **Run anyway**. This happens because the installer
+   is not code-signed (a signing certificate costs money; it is a future
+   decision), not because anything is wrong with it. You only have to do this
+   once.
+3. Click through: the GPL-3.0 licence, where to install it, and two optional
+   boxes — a desktop shortcut, and whether to start Rekounts when you sign in.
+   Both are off unless you tick them, and you can change your mind later in
+   Settings.
 4. The **first launch is slow** — a minute or two while it downloads the speech
    model (~486 MB for the default `small`) once, from this project's own release
    host. After that it starts in a few seconds and works with the network
    unplugged. Nothing is downloaded from Hugging Face — see
    [Where the speech models come from](#where-the-speech-models-come-from).
-5. Look for the **microphone tray icon** near the clock (you may need to click
+5. Look for the **Rekounts tray icon** near the clock (you may need to click
    the `^` to show hidden icons). A small dark **pill** also appears just above
    your taskbar — that is how you know it is listening. It fades to a faint hint
    when idle and brightens when you hover it.
+
+**No administrator rights, no UAC prompt.** It installs for your account only,
+into `%LOCALAPPDATA%\Programs\Rekounts`, and appears in **Settings → Apps** like
+any other program.
+
+**Upgrading** is the same download — run the newer installer over the old one.
+It will ask you to close Rekounts if it is running, and it never touches your
+settings, history or downloaded model.
+
+**Uninstalling** leaves your data alone by default. `%APPDATA%\Rekounts` — your
+settings, your dictation history and the speech model you downloaded — is only
+deleted if you tick the box on the uninstaller that says so.
+
+### Or the portable ZIP
+
+Prefer not to install anything? Download **`Rekounts-<version>-win64.zip`** from
+the same release page, unzip it **anywhere you like**, and run `Rekounts.exe`
+from inside the folder. Keep the folder together — the `.exe` needs the files
+next to it. Everything works the same; you just manage the folder yourself, and
+there is no Start-menu entry and no uninstaller.
 
 To have it start with Windows, see [Run on startup](#run-on-startup) below.
 
@@ -99,7 +123,13 @@ Right-click the tray icon:
 - **Open Dashboard** — the Hub (below).
 - **Settings…** — jumps straight to the Hub's Settings page.
 - **Microphone** / **Language** — quick switches without opening Settings.
-- **Check for Updates** — asks GitHub for the latest commit. Only when clicked.
+- **Check for Updates** — asks GitHub whether there is a newer **release** than
+  the version you are running, and tells you either way. Click the notification
+  to open the release page. Only when clicked, unless you switch on
+  **Check for updates automatically** (Settings → System, off by default) — with
+  that on, it also asks once per launch and stays silent unless there is
+  actually something newer. Either way it downloads nothing and installs
+  nothing; you decide.
 - **Help** — opens this README in your browser.
 - **Quit**.
 
@@ -198,6 +228,12 @@ beam width), `stream_model` (the model live typing uses) and
 | Dictation history + dictionary | `%APPDATA%\Rekounts\history.db` |
 | Logs | `%APPDATA%\Rekounts\logs\rekounts.log` |
 | Speech models | `%APPDATA%\Rekounts\models\<name>\` |
+| The program itself (if you used the installer) | `%LOCALAPPDATA%\Programs\Rekounts` |
+
+Note that those are two different places on purpose: **uninstalling removes the
+program, not your data.** `%APPDATA%\Rekounts` survives uninstalls, reinstalls
+and upgrades unless you tick the uninstaller's "also delete my settings,
+history and downloaded model" box.
 
 Full detail — including what is *not* stored — is in
 [docs/privacy.md](docs/privacy.md).
@@ -255,6 +291,12 @@ under `HKCU\...\CurrentVersion\Run` and re-checks it at every launch, so it
 fixes itself if you move the app folder. (Turning the switch off removes the
 entry.) Alternatively, drop a shortcut to `Rekounts.exe` or `run.bat` into
 `shell:startup` (Win+R → `shell:startup`).
+
+The installer's **"Start Rekounts automatically when I sign in to Windows"**
+checkbox is the *same* switch, not a second one — it writes the same registry
+entry, so the Settings toggle reads back ON afterwards and turning it off in
+either place turns it off everywhere. If you have it on already, re-running the
+installer leaves it on.
 
 ## Accuracy guide
 
@@ -362,10 +404,43 @@ works.
 build.bat
 ```
 
-Produces `dist\Rekounts\` with `Rekounts.exe` (~350 MB — it bundles
-Python, Qt and the speech engine). Zip the whole folder to share it. The speech
-model is *not* bundled; it downloads once on first run from this project's own
-release host (see [Where the speech models come from](#where-the-speech-models-come-from)).
+One run produces everything a release needs, in `dist\`:
+
+| | |
+| --- | --- |
+| `Rekounts\Rekounts.exe` | the app (~350 MB — it bundles Python, Qt and the speech engine) |
+| `Rekounts-<version>-win64.zip` | the portable download |
+| `Rekounts-Setup-<version>.exe` | the installer |
+
+The speech model is *not* bundled; it downloads once on first run from this
+project's own release host (see
+[Where the speech models come from](#where-the-speech-models-come-from)).
+
+The installer step needs **Inno Setup 6.3 or newer**, a build-time dependency
+only — nothing in the app uses it:
+
+```bat
+winget install -e --id JRSoftware.InnoSetup
+```
+
+Without it, `build.bat` still builds the app and the ZIP, says the installer was
+skipped, and exits successfully. `build.bat --no-installer` skips it deliberately.
+The installer script itself is [installer/rekounts.iss](installer/rekounts.iss);
+its header explains the three guarantees it exists to keep (no admin, your data
+survives an uninstall, one launch-at-login mechanism).
+
+### The icon
+
+`assets/icon.ico` is committed, but generated — regenerate it (and the
+installer's wizard bitmaps) with:
+
+```bat
+.venv\Scripts\python tools\make_icon.py
+```
+
+The mark is the site favicon transcribed into that script, which is the icon's
+source of record. The same `.ico` is used by the `.exe`, the tray, the app's
+windows, the installer and the Start-menu shortcut.
 
 ### Publishing a speech model (maintainers)
 

@@ -33,6 +33,14 @@ contributions are very welcome.
    [README](README.md#install--from-source-developers)).
 3. Run the app with `run.bat` and the tests with `pytest` (above).
 
+Nothing else is needed to work on the app. Two extras are **build-time only**,
+and only if you are producing a release:
+
+| Tool | Install | Needed for |
+| --- | --- | --- |
+| [Inno Setup](https://jrsoftware.org/isinfo.php) 6.3+ | `winget install -e --id JRSoftware.InnoSetup` | `Rekounts-Setup-<version>.exe`. `build.bat` finds it automatically, and skips the installer step with a note if it is absent. |
+| [Pillow](https://python-pillow.org/) | `pip install pillow` | regenerating `assets/icon.ico` with `tools/make_icon.py`. The `.ico` is committed, so you only need this if you are changing the icon. |
+
 ## Good to know
 
 - **Add a test for new logic.** Pure-logic code (config, text cleaning, state

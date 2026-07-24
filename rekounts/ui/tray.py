@@ -1,10 +1,10 @@
 """System-tray icon + menu.
 
-Minimal monochrome: a white microphone glyph on a dark rounded tile (no
-gradients), matching the redesigned dashboard. The constructor stays
-backward-compatible — the original `TrayApp(app, on_open_settings, on_quit)`
-call still works; every new capability is an optional keyword the conductor
-wires in at merge time.
+The tray shows the app's one icon (``assets/icon.ico`` via
+``rekounts.ui.branding``) — the same monochrome waveform mark as the `.exe`, the
+Start-menu shortcut and the website. The constructor stays backward-compatible —
+the original `TrayApp(app, on_open_settings, on_quit)` call still works; every new
+capability is an optional keyword the conductor wires in at merge time.
 """
 
 import json
@@ -19,42 +19,31 @@ import webbrowser
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from rekounts import __version__
 from rekounts.device_utils import canonical_microphone_name, list_microphones
+from rekounts.ui.branding import app_icon
 
 log = logging.getLogger(__name__)
 
-# The ONE network call this app is permitted to make, and only on an explicit
-# "Check for Updates" click. Public, unauthenticated GitHub REST endpoint.
+# The ONE network call this app makes. Public, unauthenticated GitHub REST
+# endpoint, reached on an explicit "Check for Updates" click — or, if and only if
+# the user has switched on "Check for updates automatically" (OFF by default),
+# once per launch. Nothing about the user is sent: it is a plain GET for a public
+# release, with no query string, no token and no identifier beyond the
+# User-Agent GitHub requires.
 GITHUB_REPO = "rekreatedigital/rekounts"
 
+# Compared against the RELEASE tag, not the newest commit: master moves daily and
+# means nothing to someone running a build, whereas a release is the thing they
+# can actually install. See _fetch_latest.
+RELEASES_API = "https://api.github.com/repos/{slug}/releases/latest"
+RELEASES_PAGE = "https://github.com/{slug}/releases/latest"
+UPDATE_TIMEOUT_S = 8
 
-def _make_icon() -> QtGui.QIcon:
-    """Monochrome mic glyph: white on a dark rounded tile."""
-    s = 64
-    pix = QtGui.QPixmap(s, s)
-    pix.fill(QtGui.QColor(0, 0, 0, 0))
-    p = QtGui.QPainter(pix)
-    p.setRenderHint(QtGui.QPainter.Antialiasing)
-
-    # dark charcoal rounded tile (matches dashboard surfaces)
-    p.setBrush(QtGui.QColor("#1a1c22"))
-    p.setPen(QtGui.QPen(QtGui.QColor("#2a2d35"), 2))
-    p.drawRoundedRect(QtCore.QRectF(3, 3, s - 6, s - 6), 15, 15)
-
-    # white microphone glyph
-    white = QtGui.QColor(240, 242, 245)
-    p.setBrush(white)
-    p.setPen(QtCore.Qt.NoPen)
-    p.drawRoundedRect(QtCore.QRectF(26, 14, 12, 24), 6, 6)          # capsule
-    pen = QtGui.QPen(white, 3)
-    pen.setCapStyle(QtCore.Qt.RoundCap)
-    p.setPen(pen)
-    p.setBrush(QtCore.Qt.NoBrush)
-    p.drawArc(QtCore.QRectF(20, 20, 24, 24), 200 * 16, 140 * 16)    # cradle
-    p.drawLine(32, 44, 32, 50)                                      # stem
-    p.drawLine(26, 50, 38, 50)                                      # base
-    p.end()
-    return QtGui.QIcon(pix)
+# How long after launch the opt-in automatic check runs. Late enough to stay out
+# of the way of the model warm-up (the thing the user is actually waiting for),
+# short enough that it has happened by the time they first open the tray menu.
+AUTO_CHECK_DELAY_MS = 10_000
 
 
 def _origin_repo_slug():
@@ -99,9 +88,57 @@ def _resolve_repo_slug() -> str:
     return GITHUB_REPO
 
 
+# ------------------------------------------------------------ release compare
+def parse_version(text):
+    """``"v0.3.0"`` / ``"0.3"`` / ``"v1.2.3-rc1"`` -> a comparable tuple, or None.
+
+    Only the leading dotted-numeric run is read; a ``-rc1`` / ``+build`` suffix is
+    ignored rather than ordered, because GitHub's ``releases/latest`` already
+    excludes pre-releases, so a suffix only ever turns up on a tag that was
+    hand-published and is not worth guessing about.
+
+    None means "unparseable", and every caller treats that as "say nothing" — an
+    odd tag must never be reported as an available upgrade.
+    """
+    if not isinstance(text, str):
+        return None
+    m = re.match(r"\s*[vV]?(\d+(?:\.\d+)*)", text)
+    if not m:
+        return None
+    return tuple(int(part) for part in m.group(1).split("."))
+
+
+def is_newer(candidate, current) -> bool:
+    """True if ``candidate`` is a strictly later version than ``current``.
+
+    Both are tuples from :func:`parse_version`; they are zero-padded to the same
+    length first so ``0.4`` and ``0.4.0`` compare equal instead of the shorter one
+    losing.
+    """
+    if not candidate or not current:
+        return False
+    width = max(len(candidate), len(current))
+    pad = (0,) * width
+    return (candidate + pad)[:width] > (current + pad)[:width]
+
+
+def fetch_latest_release(slug: str, timeout: float = UPDATE_TIMEOUT_S) -> dict:
+    """The GitHub API's newest published, non-pre-release release for ``slug``."""
+    req = urllib.request.Request(
+        RELEASES_API.format(slug=slug),
+        headers={"Accept": "application/vnd.github+json",
+                 "User-Agent": f"Rekounts/{__version__}"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
 class _Signals(QtCore.QObject):
     # Marshal worker-thread toasts back onto the GUI thread.
     toast = QtCore.Signal(str)
+    # An available update: the message, and the page to open if the toast is
+    # clicked. Separate from `toast` so an ordinary message can never inherit a
+    # stale link.
+    update_found = QtCore.Signal(str, str)
 
 
 class TrayApp:
@@ -134,9 +171,14 @@ class TrayApp:
 
         self._sig = _Signals()
         self.tray = QtWidgets.QSystemTrayIcon()
-        self.tray.setIcon(_make_icon())
+        self.tray.setIcon(app_icon())
         self.tray.setToolTip("Rekounts")
         self._sig.toast.connect(self.notify)
+        self._sig.update_found.connect(self._announce_update)
+        # Set only by a toast that has somewhere to go; clicking any other toast
+        # does nothing. See notify().
+        self._pending_url = None
+        self.tray.messageClicked.connect(self._open_pending_url)
 
         # Keep a hard reference: a QMenu owned only by the C++ side of
         # setContextMenu() can be garbage-collected out from under PySide6.
@@ -165,7 +207,11 @@ class TrayApp:
 
         menu.addSeparator()
         updates = menu.addAction("Check for Updates")
-        updates.triggered.connect(on_check_updates or self._check_for_updates)
+        # Wrapped rather than connected directly: QAction.triggered passes its
+        # `checked` bool to the slot, which would land in _check_for_updates'
+        # `silent` parameter and turn a menu click into a silent check.
+        check_updates = on_check_updates or self._check_for_updates
+        updates.triggered.connect(lambda _checked=False: check_updates())
         help_action = menu.addAction("Help")
         help_action.triggered.connect(on_help or self._open_help)
 
@@ -174,6 +220,17 @@ class TrayApp:
 
         self.tray.setContextMenu(menu)
         self.tray.show()
+
+        # Opt-in, default OFF (config DEFAULTS), and never overridden by a
+        # caller-supplied on_check_updates: a host that replaced the manual check
+        # would be surprised by us firing our own network call behind it.
+        self._auto_timer = None
+        if on_check_updates is None and self._auto_check_enabled():
+            self._auto_timer = QtCore.QTimer()
+            self._auto_timer.setSingleShot(True)
+            self._auto_timer.timeout.connect(
+                lambda: self._check_for_updates(silent=True))
+            self._auto_timer.start(AUTO_CHECK_DELAY_MS)
 
     # ----------------------------------------------------------- submenus
     def _refresh_microphone_menu(self):
@@ -239,29 +296,87 @@ class TrayApp:
         self.notify(f"Language set to {label}.")
 
     # -------------------------------------------------------- update check
-    def _check_for_updates(self):
-        """Single permitted network call — only fires on explicit user click."""
-        self.notify("Checking GitHub for updates…")
-        threading.Thread(target=self._fetch_latest, daemon=True).start()
+    def _auto_check_enabled(self) -> bool:
+        """Is the opt-in automatic check switched on? Defaults to no.
 
-    def _fetch_latest(self):
+        Anything unexpected — no config, an exception — answers no. The safe
+        direction for a network call is always "don't".
+        """
+        if self.config is None:
+            return False
+        try:
+            return bool(self.config.get("auto_check_updates"))
+        except Exception:                                    # pragma: no cover
+            log.debug("could not read auto_check_updates; assuming off")
+            return False
+
+    def _check_for_updates(self, silent: bool = False):
+        """Ask GitHub for the newest release.
+
+        ``silent`` is the opt-in automatic check: it says nothing unless there is
+        actually an update, so a launch with no news — or with no network — is
+        completely quiet. A click is never silent; the user asked, so they get an
+        answer either way.
+        """
+        if not silent:
+            self.notify("Checking GitHub for updates…")
+        threading.Thread(target=self._fetch_latest, args=(silent,),
+                         daemon=True).start()
+
+    def _fetch_latest(self, silent: bool = False):
         # Slug resolution shells out to git, so it happens here on the worker
         # thread, never on the GUI thread or at import time.
-        url = f"https://api.github.com/repos/{_resolve_repo_slug()}/commits/master"
+        slug = _resolve_repo_slug()
         try:
-            req = urllib.request.Request(
-                url, headers={"Accept": "application/vnd.github+json",
-                              "User-Agent": "Rekounts"})
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            sha = (data.get("sha") or "")[:7]
-            date = (data.get("commit", {}).get("author", {}).get("date", ""))[:10]
-            msg = (data.get("commit", {}).get("message", "") or "").splitlines()[0]
-            self._sig.toast.emit(
-                f"Latest on GitHub: {sha} ({date})\n{msg[:80]}")
+            data = fetch_latest_release(slug)
         except Exception as e:
+            # A 404 is the ordinary state of a repo with no published release
+            # yet, not a fault worth alarming anyone about.
             log.warning("update check failed: %s", e)
-            self._sig.toast.emit("Could not reach GitHub to check for updates.")
+            if not silent:
+                self._sig.toast.emit(
+                    "Could not reach GitHub to check for updates.")
+            return
+
+        if not isinstance(data, dict):
+            log.warning("update check failed: unexpected response shape")
+            if not silent:
+                self._sig.toast.emit(
+                    "Could not reach GitHub to check for updates.")
+            return
+
+        tag = (data.get("tag_name") or "").strip()
+        page = (data.get("html_url") or "").strip() or RELEASES_PAGE.format(slug=slug)
+        latest = parse_version(tag)
+        current = parse_version(__version__)
+
+        if is_newer(latest, current):
+            self._sig.update_found.emit(
+                f"Rekounts {tag.lstrip('vV')} is available "
+                f"(you have {__version__}).\nClick to open the release page.",
+                page)
+        elif silent:
+            return                       # up to date, and nobody asked — say nothing
+        elif latest is None:
+            # An unparseable tag is reported as-is rather than guessed at, so the
+            # user still learns something instead of being told "up to date".
+            self._sig.toast.emit(
+                f"Latest release on GitHub: {tag or 'unknown'}. "
+                f"You have {__version__}.")
+        else:
+            self._sig.toast.emit(f"You are on the latest release ({__version__}).")
+
+    def _announce_update(self, message: str, url: str):
+        """Show the update toast, and arm it so clicking opens the release page."""
+        self.notify(message, url=url)
+
+    def _open_pending_url(self):
+        """The user clicked a toast that had somewhere to go."""
+        url = self._pending_url
+        if not url:
+            return
+        # Launching a browser can block for a moment; keep it off the GUI thread.
+        threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()
 
     def _open_help(self):
         # Off the GUI thread: slug resolution shells out to git, and launching
@@ -272,7 +387,7 @@ class TrayApp:
         webbrowser.open(f"https://github.com/{_resolve_repo_slug()}#readme")
 
     # -------------------------------------------------------------- toast
-    def notify(self, message: str):
+    def notify(self, message: str, url: str | None = None):
         """The single choke-point every toast passes through.
 
         Tray-originated toasts (mic/language switches, the update check) and
@@ -280,7 +395,12 @@ class TrayApp:
         "Tray notifications" switch is honored in exactly one place instead of
         being wrapped around some callers and bypassed by others. A broken gate
         must never swallow a real message, so any error means "show it".
+
+        ``url`` makes this toast clickable. It is assigned unconditionally, and
+        every ordinary toast clears it back to None, so a click can only ever
+        follow the link of the message currently on screen.
         """
+        self._pending_url = url
         try:
             enabled = self._notifications_enabled()
         except Exception:
