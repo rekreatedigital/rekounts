@@ -413,3 +413,31 @@ def test_toggle_switch_is_a_checkbox_underneath(app):
     sw.setChecked(False)
     assert seen == [False]
     assert sw.knob is not None      # animated position property exists
+
+
+# ------------------------------------------------------------- scratchpad
+def test_scratchpad_switch_persists_and_schedules_an_apply(page):
+    page.scratchpad.setChecked(False)
+    assert page.config.get("scratchpad_enabled") is False
+    assert page._apply_timer.isActive()
+    page._flush_apply()
+    assert page.applies == [1]
+
+    page.scratchpad.setChecked(True)
+    assert page.config.get("scratchpad_enabled") is True
+
+
+def test_scratchpad_switch_starts_from_the_stored_value(app, cfg, history,
+                                                        monkeypatch):
+    monkeypatch.setattr("rekounts.ui.settings_page.microphone_options",
+                        lambda: list(FAKE_MICS))
+    cfg.set("scratchpad_enabled", False)
+    p = SettingsPage(cfg, history)
+    assert p.scratchpad.isChecked() is False
+
+
+def test_the_scratchpad_ships_on_by_default():
+    """Nothing appears on screen until the user opens it, so defaulting to on
+    costs them nothing and saves a hunt through Settings."""
+    from rekounts.config import DEFAULTS
+    assert DEFAULTS["scratchpad_enabled"] is True

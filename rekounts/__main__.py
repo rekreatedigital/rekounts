@@ -695,6 +695,7 @@ def _run():
     from rekounts.ui import branding
     from rekounts.ui.dashboard import Dashboard
     from rekounts.ui.overlay import Overlay
+    from rekounts.ui.scratchpad import Scratchpad, ScratchpadRouter
     from rekounts.ui.tray import TrayApp
 
     class Bridge(QtCore.QObject):
@@ -747,6 +748,13 @@ def _run():
 
     bridge.result.connect(history.add)
 
+    # The sticky note. Built here — not lazily on first open — so the tray entry
+    # is instant and, more importantly, so the saved note is read once at
+    # startup rather than on a click that would then block the GUI thread on
+    # disk. Nothing is shown until the user opens it.
+    scratchpad = Scratchpad()
+    scratchpad.set_enabled(bool(cfg.get("scratchpad_enabled")))
+
     def run_async(fn):
         threading.Thread(target=fn, daemon=True).start()
 
@@ -786,7 +794,11 @@ def _run():
             log.exception("resetting the hotkey gesture failed")
 
     controller = AppController(
-        recorder=recorder, transcriber=transcriber, cleaner=cleaner, inserter=inserter,
+        recorder=recorder, transcriber=transcriber, cleaner=cleaner,
+        # Wrapped, not replaced: the router hands every dictation to the real
+        # inserter unless the scratchpad is the focused window, in which case it
+        # writes into the note directly. See rekounts/ui/scratchpad.py.
+        inserter=ScratchpadRouter(scratchpad, inserter),
         on_error=on_error,
         on_notice=lambda m: (log.info(m), bridge.notify.emit(m)),
         run_async=run_async,
@@ -904,8 +916,11 @@ def _run():
         # Text pipeline: cheap to rebuild in place (build_cleaner re-attaches
         # the dictionary replacements provider to the new instance).
         controller.cleaner = build_cleaner()
-        controller.inserter = TextInserter(
-            mode="keystroke" if cfg.get("live_typing") else cfg.get("insertion_mode"))
+        # Re-wrapped, because this rebuilds the inserter: dropping the router
+        # here would silently stop routing dictation to the pad after the first
+        # unrelated settings change.
+        controller.inserter = ScratchpadRouter(scratchpad, TextInserter(
+            mode="keystroke" if cfg.get("live_typing") else cfg.get("insertion_mode")))
         controller.live_typing = cfg.get("live_typing")
         controller.filter_hallucinations = cfg.get("filter_hallucinations")
         # Reschedules the running cap timer (and its warning) from elapsed time,
@@ -935,6 +950,11 @@ def _run():
             history.enabled = bool(cfg.get("history_enabled"))
         except Exception:
             log.exception("applying history_enabled failed")
+        try:
+            # Turning the pad off hides an open one; it never deletes the note.
+            scratchpad.set_enabled(bool(cfg.get("scratchpad_enabled")))
+        except Exception:
+            log.exception("applying scratchpad_enabled failed")
         # Launch-at-login is applied by the Settings switch itself (its handler
         # calls startup.set_enabled, which also clears a Task Manager disable).
         # Re-applying it from config on every unrelated Save would silently
@@ -1041,7 +1061,9 @@ def _run():
         # notifications" in Settings applies at once. Living inside TrayApp.notify
         # means tray-originated toasts (mic/language/update-check) are gated too,
         # instead of only the ones routed through the bridge.
-        notifications_enabled=lambda: bool(cfg.get("show_notifications")))
+        notifications_enabled=lambda: bool(cfg.get("show_notifications")),
+        on_open_scratchpad=scratchpad.open_and_raise,
+        scratchpad_enabled=lambda: bool(cfg.get("scratchpad_enabled")))
     # The tray is the first real notification sink; anything raised earlier in
     # startup (an invalid hotkey falling back to the default, a risky-combo
     # warning) is replayed now instead of having been dropped. The switch is
@@ -1059,6 +1081,12 @@ def _run():
 
     def cleanup():
         # Release the mic (pre-roll holds it open) and the history db cleanly.
+        try:
+            # Quitting from the tray while a debounced note edit is still
+            # pending would otherwise lose the last thing the user typed.
+            scratchpad.flush()
+        except Exception:
+            pass
         try:
             recorder.close()
         except Exception:
