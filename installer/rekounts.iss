@@ -190,7 +190,7 @@ begin
   if not RegQueryStringValue(HKEY_CURRENT_USER, '{#RunKey}', '{#RunValueName}',
                              Command) then
     Exit;
-  if Pos(Lowercase(ExpandConstant('{app}')) + '', Lowercase(Command)) = 0 then
+  if Pos(Lowercase(ExpandConstant('{app}')) + '\', Lowercase(Command)) = 0 then
     Exit;
   RegDeleteValue(HKEY_CURRENT_USER, '{#RunKey}', '{#RunValueName}');
   RegDeleteValue(HKEY_CURRENT_USER, '{#StartupApproved}', '{#RunValueName}');
