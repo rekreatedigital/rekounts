@@ -1,3 +1,4 @@
+import faulthandler
 import inspect
 import logging
 import os
@@ -5,6 +6,7 @@ import sys
 import threading
 import traceback
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from rekounts import models
 from rekounts.audio_recorder import AudioRecorder
@@ -50,8 +52,19 @@ def setup_logging():
     try:
         log_dir = default_config_path().parent / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
+        # encoding is NOT optional. Left to its default the handler opens in the
+        # machine's locale codepage (cp1252 on a typical Windows install), and
+        # any record carrying a character outside it — a non-Latin microphone
+        # name from device_utils, a non-ASCII Windows username inside a path, a
+        # traceback quoting either — raises inside logging and writes NOTHING.
+        # The "--- Logging error ---" report that follows goes to stderr, which
+        # under pythonw (run.bat, the packaged .exe) does not exist, so the
+        # record was lost in total silence. errors= covers the one thing utf-8
+        # still cannot spell: a lone surrogate, which Windows path APIs can hand
+        # back. A mangled character beats a missing line.
         handler = RotatingFileHandler(
-            log_dir / "rekounts.log", maxBytes=1_000_000, backupCount=3)
+            log_dir / "rekounts.log", maxBytes=1_000_000, backupCount=3,
+            encoding="utf-8", errors="backslashreplace")
         logging.basicConfig(level=level, handlers=[handler],
                             format=_LOG_FORMAT)
         return True
@@ -62,6 +75,152 @@ def setup_logging():
         logging.basicConfig(level=level,
                             handlers=[logging.NullHandler()], format=_LOG_FORMAT)
         return False
+
+
+# Held for the life of the process. faulthandler writes to this file from a
+# fault context — a signal handler running after the interpreter has already
+# lost its footing — so the object must never be garbage-collected and closed
+# out from under it. Module-level is the only lifetime long enough.
+_crash_file = None
+# Qt does not keep a Python reference to the message handler it is given; if we
+# drop ours it can be collected and Qt calls into freed memory.
+_qt_message_handler = None
+
+# One hard crash is worth keeping; a hundred are not worth an unbounded file in
+# %APPDATA%. Over this, the file starts again rather than growing forever.
+_MAX_CRASH_LOG_BYTES = 256_000
+
+
+def _log_unhandled(where, exc_type, exc, tb):
+    """Write one unhandled exception to the log, and never raise doing it.
+
+    Formatting is logging's own ``exc_info`` path, which renders the traceback
+    without local variables — so a frame holding a transcript cannot spill its
+    contents into a diagnostic file (see the note in text_cleaner._apply_
+    replacements about the same promise).
+    """
+    try:
+        log.critical("unhandled exception in %s", where,
+                     exc_info=(exc_type, exc, tb))
+    except Exception:
+        pass  # the log is what is broken; there is nowhere left to say so
+
+
+def install_crash_handlers(crash_path=None):
+    """Route every unhandled failure into the log file. Returns True if the
+    native-crash file was armed too.
+
+    Three ways out of this app never pass through ``main()``'s try/except, and
+    all three used to end at a stderr that does not exist under ``pythonw``
+    (run.bat and the packaged .exe) — so the app misbehaved while
+    ``rekounts.log`` sat at 0 bytes:
+
+      * **a Qt slot raises.** Qt calls the slot from C++, so the exception
+        unwinds into Qt rather than into ``main()``; PySide6 hands it to
+        ``sys.excepthook``.
+      * **a worker thread raises.** The transcription thread, a background model
+        reload and the hotkey listener all run outside ``main()``'s frame;
+        ``threading`` routes their exceptions to ``threading.excepthook``.
+      * **native code crashes.** No Python frame survives at all, so no hook can
+        run — that is what ``faulthandler``'s separate file is for. Not
+        theoretical here: see the OpenMP import-order note at the top of this
+        module, whose whole point is a native access violation.
+
+    Both Python hooks chain to whatever was installed before, so running under a
+    debugger or pytest still behaves normally. Called from ``main()`` immediately
+    after ``setup_logging()`` — the earliest moment there is anywhere to write.
+    """
+    global _crash_file
+
+    previous_hook = sys.excepthook
+
+    def excepthook(exc_type, exc, tb):
+        # Ctrl+C is a user decision, not a crash. It has no console to arrive
+        # from under pythonw anyway, but the distinction costs one line.
+        if not issubclass(exc_type, KeyboardInterrupt):
+            _log_unhandled("the main thread", exc_type, exc, tb)
+        try:
+            previous_hook(exc_type, exc, tb)
+        except Exception:
+            pass
+
+    sys.excepthook = excepthook
+
+    previous_thread_hook = threading.excepthook
+
+    def thread_excepthook(args):
+        # A thread ending via SystemExit is a normal shutdown, and threading
+        # itself already ignores it.
+        if args.exc_type is not SystemExit:
+            name = getattr(args.thread, "name", None) or "an unnamed thread"
+            _log_unhandled(f"thread {name!r}",
+                           args.exc_type, args.exc_value, args.exc_traceback)
+        try:
+            previous_thread_hook(args)
+        except Exception:
+            pass
+
+    threading.excepthook = thread_excepthook
+
+    # A separate file, not rekounts.log: faulthandler writes raw bytes straight
+    # to a file descriptor from a dying process. It cannot take the logging
+    # lock, cannot rotate, and must not be able to interleave half a traceback
+    # into the middle of a normal log line.
+    try:
+        path = Path(crash_path) if crash_path else _crash_log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Appended to, so a crash survives the relaunch that follows it — the
+        # user reports the problem after restarting, not before.
+        if path.exists() and path.stat().st_size > _MAX_CRASH_LOG_BYTES:
+            path.unlink()
+        _crash_file = open(path, "a", encoding="utf-8",
+                           errors="backslashreplace")
+        faulthandler.enable(file=_crash_file, all_threads=True)
+        return True
+    except Exception:
+        # Losing native-crash capture is an annoyance; refusing to start over it
+        # would be the silent startup death setup_logging() already avoids. The
+        # Python-level hooks above are installed either way.
+        log.warning("could not arm the native crash handler", exc_info=True)
+        return False
+
+
+def _crash_log_path():
+    return default_config_path().parent / "logs" / "rekounts-crash.log"
+
+
+def install_qt_message_handler():
+    """Send Qt's own diagnostics to the log file.
+
+    Qt prints its complaints — a failed connect, an unreadable image, a platform
+    plugin problem — to stderr, which under pythonw is nowhere. These are often
+    the only explanation for a window that does not appear.
+
+    Installed from ``_run()`` rather than ``main()`` because QtCore cannot be
+    imported until the speech model has loaded; see the import-order note at the
+    top of this module.
+    """
+    global _qt_message_handler
+    from PySide6 import QtCore
+
+    qt_log = logging.getLogger("qt")
+    levels = {
+        QtCore.QtMsgType.QtDebugMsg: logging.DEBUG,
+        QtCore.QtMsgType.QtInfoMsg: logging.INFO,
+        QtCore.QtMsgType.QtWarningMsg: logging.WARNING,
+        QtCore.QtMsgType.QtCriticalMsg: logging.ERROR,
+        QtCore.QtMsgType.QtFatalMsg: logging.CRITICAL,
+    }
+
+    def handler(mode, context, message):
+        try:
+            qt_log.log(levels.get(mode, logging.INFO), "%s", message)
+        except Exception:
+            pass  # a logging failure must not propagate into Qt's C++ frames
+
+    _qt_message_handler = handler
+    QtCore.qInstallMessageHandler(handler)
+    return handler
 
 
 class NotificationBuffer:
@@ -628,6 +787,10 @@ def main():
         # anyway the user must still get the dialog rather than a process that
         # silently never appears (there is no console under pythonw).
         setup_logging()
+        # Immediately after, and before anything else can fail: from here on an
+        # exception in a Qt slot, on a worker thread, or in native code lands in
+        # a file instead of the stderr pythonw does not have.
+        install_crash_handlers()
         if migration is not None and migration.attempted:
             log.info("data-folder migration: %s", migration.summary())
             for item, error in migration.failed:
@@ -789,6 +952,10 @@ def _run():
 
     # 2) Now it is safe to import and initialize Qt.
     from PySide6 import QtCore, QtWidgets
+
+    # Qt exists at last, so its own diagnostics can be captured. The Python-level
+    # hooks went in back in main(); this is the half that had to wait.
+    install_qt_message_handler()
     from rekounts.languages import LANGUAGES
     from rekounts.ui import branding
     from rekounts.ui.dashboard import Dashboard
