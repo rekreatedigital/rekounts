@@ -36,8 +36,8 @@ Robustness measures (each maps to an audited failure mode):
     pynput's character typing (the documented drop-chars failure mode on Windows).
   * Synthesized keystrokes are sent in atomic batches, and text long enough to
     be unsafe that way is delivered through the clipboard instead — see below.
-  * Text that cannot be delivered at all is left on the clipboard rather than
-    discarded, so a dictation is never reduced to a notification.
+  * Text that cannot be delivered at all is reported as such, so the app can
+    tell the user plainly. It is never written to the clipboard — see below.
 
 Why long text is not typed (measured, not assumed)
 --------------------------------------------------
@@ -67,18 +67,18 @@ destroyed most of the message leaves a pasted transcript byte-exact. Hence
 literally, and anything longer is handed over via the clipboard, falling back
 to typing only if the clipboard/paste calls themselves raise. Users whose app
 ignores Ctrl+V can turn the escalation off entirely (``long_text_via_paste`` /
-the "Use paste for long dictations" setting).
+the "Paste long dictations" setting).
 
-Live-typing increments never touch the clipboard
-------------------------------------------------
-``insert(..., streaming=True)`` marks a call as one live-typing increment — a
-word or two appended while the user is still speaking, re-sent every ~0.8s.
-Increments are ALWAYS typed literally: they skip paste mode, they skip the
-long-text escalation above, and they never park undelivered text. Borrowing the
-clipboard once per tick would silently overwrite whatever the user had copied,
-over and over, and there is nothing to gain by it — the complete transcript is
-inserted again on release, through the full protected path, and History holds it
-either way.
+An undelivered dictation goes to History, not the clipboard
+-----------------------------------------------------------
+Nothing focused? An admin window? The insertion reports the outcome and the app
+says so plainly; the transcript is already in History on the dashboard, where
+the user can copy it. We do NOT park it on the clipboard as a consolation.
+Overwriting whatever someone had copied — silently, since the production
+inserter has no notice hook — is the same class of bug this module spends most
+of its length preventing, and the dashboard is a better answer than a clipboard
+the user never asked us to touch. The only clipboard write in normal operation
+is the borrowed-and-restored one on the paste path.
 
 Whether a paste actually landed cannot be verified
 --------------------------------------------------
@@ -937,30 +937,20 @@ class TextInserter:
         False to force literal keystrokes at the documented cost. Backed by the
         config key of the same name (Settings ▸ Behavior ▸ "Use paste for long
         dictations") so users whose app ignores Ctrl+V have a real escape
-        hatch. Never applies to ``streaming=True`` increments.
-    clipboard_fallback:
-        When the text cannot be delivered (nothing editable focused, an elevated
-        window, or an injection failure), leave it on the clipboard so the user
-        can paste it themselves instead of losing the dictation to a notice.
-        Whether that happened is reported by :attr:`last_parked_on_clipboard`.
+        hatch.
     backend:
         Injectable platform backend (for tests). Defaults to the platform backend.
     """
 
     def __init__(self, mode="paste", restore_delay=0.2, *, key_delay=0.0,
                  modifier_timeout=2.0, on_notice=None, backend=None,
-                 clipboard_fallback=True, long_text_via_paste=True):
+                 long_text_via_paste=True):
         self.mode = mode
         self.long_text_via_paste = long_text_via_paste
         self.restore_delay = restore_delay
         self.key_delay = key_delay
         self.modifier_timeout = modifier_timeout
         self.on_notice = on_notice
-        self.clipboard_fallback = clipboard_fallback
-        # Set by every insert() call: True when that dictation could not be
-        # delivered but was parked on the clipboard instead. The controller
-        # reads it to word the notice accurately.
-        self.last_parked_on_clipboard = False
         self.backend = backend if backend is not None else _make_backend()
 
     # -- public -------------------------------------------------------------
@@ -980,7 +970,7 @@ class TextInserter:
         """
         return self.backend.foreground_window()
 
-    def insert(self, text: str, target=None, *, streaming=False) -> InsertResult:
+    def insert(self, text: str, target=None) -> InsertResult:
         """Insert ``text``; return an :class:`InsertResult` describing the outcome.
 
         ``target`` — optional expected foreground window. Defaults to whatever
@@ -988,28 +978,14 @@ class TextInserter:
         goes wherever the cursor is when dictation ENDS, no matter which app the
         user wandered through while speaking.
 
-        ``streaming`` — this call is one live-typing INCREMENT (a word or two
-        appended mid-utterance), not a finished dictation. Increments are typed
-        literally and never touch the clipboard: no paste mode, no long-text
-        escalation, no parking, no per-tick notice. See the module docstring for
-        why. Callers that are delivering the complete transcript must leave this
-        False so the full protected path applies.
+        Deliberately two positional parameters and no required keyword: callers
+        wrap this object (the scratchpad router delegates with a bare
+        ``insert(text)``), and a required keyword here would break them.
         """
-        self.last_parked_on_clipboard = False
         if not text:
             return InsertResult.SKIPPED
 
         expected = target if target is not None else self.backend.foreground_window()
-
-        if streaming:
-            # Explicit, not inferred: length and global state both lie (a
-            # lagging tick or a long final_tail is still an increment, and a
-            # short final transcript still deserves the clipboard fallback).
-            try:
-                return self._do_type(text, expected)
-            except Exception as e:
-                log.warning("live-typing increment failed: %s", e)
-                return InsertResult.FAILED
 
         if self.mode == "keystroke":
             result = self._do_keystroke(text, expected)
@@ -1023,8 +999,6 @@ class TextInserter:
                 except Exception as e2:
                     log.error("keystroke fallback also failed: %s", e2)
                     result = InsertResult.FAILED
-        if result in _UNDELIVERED:
-            self._park_on_clipboard(text)
         return self._notify(result)
 
     # -- internals ----------------------------------------------------------
@@ -1151,8 +1125,9 @@ class TextInserter:
             user switched apps, we stop rather than spray the tail into
             whatever they opened.
 
-        Either way the caller parks the full text on the clipboard and says so,
-        so a stopped delivery costs the user a paste, not the dictation.
+        Either way the caller reports an undelivered outcome, so the user is
+        told the message stopped rather than left to notice half a sentence.
+        History has the whole transcript.
         """
         if not self._wait_for_modifiers(budget):
             return False, InsertResult.INTERRUPTED
@@ -1193,62 +1168,27 @@ class TextInserter:
             return InsertResult.FAILED
         if complete is False:
             # Delivery stopped early. Whatever already landed stays, but the
-            # user is told and gets the whole transcript on the clipboard
-            # rather than a truncated sentence.
+            # user is told rather than left with a truncated sentence and no
+            # explanation; History has the whole thing.
             log.warning("keystroke delivery stopped early (%s); the full text is "
                         "preserved", stopped_by[0] if stopped_by else "no target")
             return stopped_by[0] if stopped_by else InsertResult.NO_TARGET
         return InsertResult.TYPED
 
-    def _park_on_clipboard(self, text):
-        """Leave an undeliverable dictation on the clipboard.
-
-        Deliberately does NOT restore the previous clipboard: the whole point is
-        that the text is still there for the user to paste. The notice says so,
-        so it is never a silent clobber.
-        """
-        if not self.clipboard_fallback:
-            return False
-        try:
-            self.backend.set_clipboard_text(text)
-        except Exception as e:
-            log.warning("could not park the dictation on the clipboard: %s", e)
-            return False
-        self.last_parked_on_clipboard = True
-        return True
-
     def _notify(self, result):
         if self.on_notice is None:
             return result
-        parked = self.last_parked_on_clipboard
-        if parked:
-            msg = {
-                InsertResult.NO_TARGET:
-                    "No text field in focus — the transcript is on your "
-                    "clipboard (and in History).",
-                InsertResult.BLOCKED:
-                    "Can't type into an admin window — the transcript is on "
-                    "your clipboard (and in History).",
-                InsertResult.INTERRUPTED:
-                    "Typing stopped — a key was still held down. The full "
-                    "transcript is on your clipboard (and in History).",
-                InsertResult.FAILED:
-                    "Couldn't insert the dictated text — it's on your "
-                    "clipboard (and in History).",
-            }.get(result)
-        else:
-            msg = {
-                InsertResult.NO_TARGET:
-                    "No text field in focus — nothing was pasted.",
-                InsertResult.BLOCKED:
-                    "Can't paste into an admin window. Run Rekounts as "
-                    "administrator to dictate there.",
-                InsertResult.INTERRUPTED:
-                    "Typing stopped — a key was still held down. The rest is "
-                    "in History.",
-                InsertResult.FAILED:
-                    "Couldn't insert the dictated text.",
-            }.get(result)
+        msg = {
+            InsertResult.NO_TARGET:
+                "No text field was focused — the transcript is in History.",
+            InsertResult.BLOCKED:
+                "Can't type into an admin window — the transcript is in History.",
+            InsertResult.INTERRUPTED:
+                "Typing stopped — a key was still held down. The transcript is "
+                "in History.",
+            InsertResult.FAILED:
+                "Couldn't insert the dictated text — it's in History.",
+        }.get(result)
         if msg:
             try:
                 self.on_notice(msg)

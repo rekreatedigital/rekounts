@@ -186,10 +186,9 @@ def test_no_target_returns_no_target_without_pasting():
     assert be.typed == []          # nothing was sprayed at the non-target
 
 
-def test_no_target_without_fallback_leaves_clipboard_alone():
+def test_no_target_leaves_the_clipboard_untouched():
     be = FakeBackend(no_target=True)
-    ins = TextInserter(restore_delay=0, modifier_timeout=0.05, backend=be,
-                       clipboard_fallback=False)
+    ins = TextInserter(restore_delay=0, modifier_timeout=0.05, backend=be)
     assert ins.insert("hello") == InsertResult.NO_TARGET
     assert "set_text" not in be.calls
 
@@ -347,99 +346,30 @@ def test_typing_is_given_a_continue_predicate():
 
 
 # --------------------------------------------------------------------------
-# Clipboard fallback for undeliverable text
-# --------------------------------------------------------------------------
-def test_no_target_parks_text_on_clipboard():
-    ins, be = make(no_target=True)
-    assert ins.insert("hello") == InsertResult.NO_TARGET
-    assert be.set_text == "hello"
-    assert ins.last_parked_on_clipboard is True
-    assert "restore" not in be.calls   # deliberately left there to be pasted
-
-
-def test_blocked_parks_text_on_clipboard():
-    ins, be = make(blocked=True)
-    assert ins.insert("hello") == InsertResult.BLOCKED
-    assert be.set_text == "hello"
-    assert ins.last_parked_on_clipboard is True
-
-
-def test_successful_paste_does_not_set_the_parked_flag():
-    ins, be = make()
-    assert ins.insert("hello") == InsertResult.PASTED
-    assert ins.last_parked_on_clipboard is False
-
-
-def test_parked_flag_resets_between_calls():
-    be = FakeBackend(no_target=True)
-    ins = TextInserter(restore_delay=0, modifier_timeout=0.05, backend=be)
-    ins.insert("hello")
-    assert ins.last_parked_on_clipboard is True
-    be.no_target = False
-    ins.insert("hello again")
-    assert ins.last_parked_on_clipboard is False
-
-
-def test_clipboard_park_failure_is_survivable():
-    be = FakeBackend(no_target=True, fail_set_text=True)
-    ins = TextInserter(restore_delay=0, modifier_timeout=0.05, backend=be)
-    assert ins.insert("hello") == InsertResult.NO_TARGET
-    assert ins.last_parked_on_clipboard is False
-
-
-def test_notice_mentions_the_clipboard_when_text_was_parked():
-    notices = []
-    be = FakeBackend(no_target=True)
-    ins = TextInserter(restore_delay=0, modifier_timeout=0.05,
-                       on_notice=notices.append, backend=be)
-    ins.insert("hello")
-    assert "clipboard" in notices[0].lower()
-
-
-def test_notice_omits_the_clipboard_when_parking_was_disabled():
-    notices = []
-    be = FakeBackend(no_target=True)
-    ins = TextInserter(restore_delay=0, modifier_timeout=0.05,
-                       on_notice=notices.append, backend=be,
-                       clipboard_fallback=False)
-    ins.insert("hello")
-    assert "clipboard" not in notices[0].lower()
-
-
-# --------------------------------------------------------------------------
-# Live-typing increments (streaming=True) never touch the clipboard
+# An undelivered dictation goes to History — the clipboard is never touched
 #
-# stream_loop fires every ~0.8s while the user speaks. Any clipboard write on
-# that path overwrites what the user had copied, repeatedly, with a word
-# fragment, and nothing puts it back.
+# Parking the transcript on the clipboard overwrote whatever the user had
+# copied, and with on_notice=None in the app it did so silently. The dashboard
+# already has the text; the clipboard is not ours to take.
 # --------------------------------------------------------------------------
 def _clipboard_calls(be):
     return [c for c in be.calls if c in ("set_text", "backup", "restore", "paste")]
 
 
-def test_streaming_increment_never_touches_the_clipboard():
-    ins, be = make(mode="keystroke")
-    assert ins.insert(" and then", streaming=True) == InsertResult.TYPED
+def test_no_target_leaves_the_clipboard_alone():
+    ins, be = make(no_target=True)
+    assert ins.insert("hello") == InsertResult.NO_TARGET
     assert _clipboard_calls(be) == []
     assert be.set_text is None
 
 
-def test_streaming_increment_is_not_parked_when_it_cannot_be_delivered():
-    # Focus on the desktop/taskbar mid-stream: master left the clipboard alone,
-    # and so must we — the words arrive again in the final transcript.
-    ins, be = make(mode="keystroke", no_target=True)
-    assert ins.insert(" and then", streaming=True) == InsertResult.NO_TARGET
-    assert _clipboard_calls(be) == []
-    assert ins.last_parked_on_clipboard is False
-
-
-def test_streaming_increment_is_not_parked_when_the_target_is_elevated():
-    ins, be = make(mode="keystroke", blocked=True)
-    assert ins.insert(" and then", streaming=True) == InsertResult.BLOCKED
+def test_blocked_leaves_the_clipboard_alone():
+    ins, be = make(blocked=True)
+    assert ins.insert("hello") == InsertResult.BLOCKED
     assert _clipboard_calls(be) == []
 
 
-def test_streaming_increment_is_not_parked_when_injection_fails():
+def test_a_failed_injection_leaves_the_clipboard_alone():
     be = FakeBackend()
 
     def boom(text, delay=0.0, should_continue=None):
@@ -448,50 +378,36 @@ def test_streaming_increment_is_not_parked_when_injection_fails():
     be.type_unicode = boom
     ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
                        backend=be)
-    assert ins.insert(" and then", streaming=True) == InsertResult.FAILED
+    assert ins.insert("hello") == InsertResult.FAILED
     assert _clipboard_calls(be) == []
 
 
-def test_long_streaming_increment_is_typed_not_pasted():
-    # A lagging tick, or a final_tail of everything streaming missed, is still
-    # an increment: it must not escalate to backup/set/Ctrl+V/restore.
-    ins, be = make(mode="keystroke")
-    assert ins.insert(LONG, streaming=True) == InsertResult.TYPED
-    assert be.typed == [LONG]
-    assert _clipboard_calls(be) == []
-
-
-def test_streaming_bypasses_paste_mode_entirely():
-    # Belt and braces: __main__ forces keystroke mode while live typing is on,
-    # but an increment must not paste even if that ever slipped.
-    ins, be = make(mode="paste")
-    assert ins.insert("hello", streaming=True) == InsertResult.TYPED
-    assert _clipboard_calls(be) == []
-
-
-def test_streaming_does_not_repeat_a_notice_every_tick():
-    notices = []
+def test_an_undelivered_keystroke_dictation_leaves_the_clipboard_alone():
     be = FakeBackend(no_target=True)
     ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
+                       backend=be)
+    assert ins.insert(LONG) == InsertResult.NO_TARGET
+    assert _clipboard_calls(be) == []
+
+
+def test_the_notice_points_at_history_not_the_clipboard():
+    notices = []
+    be = FakeBackend(no_target=True)
+    ins = TextInserter(restore_delay=0, modifier_timeout=0.05,
                        on_notice=notices.append, backend=be)
-    ins.insert("word", streaming=True)
-    ins.insert("word", streaming=True)
-    assert notices == []
+    ins.insert("hello")
+    assert "history" in notices[0].lower()
+    assert "clipboard" not in notices[0].lower()
 
 
-def test_the_final_transcript_still_gets_the_full_protected_path():
-    # streaming defaults to False, so the completed dictation keeps parking,
-    # notices, and the long-text escalation.
-    ins, be = make(mode="keystroke", no_target=True)
-    assert ins.insert("the whole transcript") == InsertResult.NO_TARGET
-    assert be.set_text == "the whole transcript"
-    assert ins.last_parked_on_clipboard is True
+def test_insert_takes_no_required_keyword_arguments():
+    # Callers wrap this object (the scratchpad router delegates with a bare
+    # insert(text)); a required keyword here would break them.
+    import inspect
 
-
-def test_final_long_transcript_still_escalates_to_paste():
-    ins, be = make(mode="keystroke")
-    assert ins.insert(LONG) == InsertResult.PASTED
-    assert be.pastes == 1
+    params = list(inspect.signature(TextInserter.insert).parameters.values())
+    assert [p.name for p in params] == ["self", "text", "target"]
+    assert all(p.kind is not p.KEYWORD_ONLY for p in params)
 
 
 # --------------------------------------------------------------------------
@@ -506,7 +422,7 @@ def test_modifier_timeout_between_chunks_stops_the_delivery():
     assert ins.insert(SHORT) == InsertResult.INTERRUPTED
 
 
-def test_an_interrupted_delivery_parks_the_whole_text_and_says_so():
+def test_an_interrupted_delivery_says_so_without_touching_the_clipboard():
     notices = []
     be = FakeBackend()
     be.chunks = 4
@@ -514,9 +430,8 @@ def test_an_interrupted_delivery_parks_the_whole_text_and_says_so():
     ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
                        on_notice=notices.append, backend=be)
     ins.insert(SHORT)
-    assert be.set_text == SHORT
-    assert ins.last_parked_on_clipboard is True
-    assert "clipboard" in notices[0].lower()
+    assert _clipboard_calls(be) == []
+    assert notices and "clipboard" not in notices[0].lower()
 
 
 def test_released_modifiers_let_the_delivery_finish():

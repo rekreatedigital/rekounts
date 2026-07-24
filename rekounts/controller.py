@@ -20,7 +20,7 @@ _INSERT_FAILURE_TOKENS = frozenset({
     "blocked",
     # Keystroke delivery stopped part-way because a physical modifier stayed
     # held. Some of the text may have landed, but not the message, so the user
-    # gets the clipboard copy and the notice rather than a silent half-sentence.
+    # gets a notice pointing at History rather than a silent half-sentence.
     "interrupted",
 })
 
@@ -308,17 +308,8 @@ class AppController:
         self.on_result(raw, cleaned, duration_s, inserted)
 
     def _undelivered_notice(self) -> str:
-        """Wording for a dictation that never reached a text field.
-
-        The inserter parks undeliverable text on the clipboard, so when that
-        worked the honest message is "it's one paste away", not just "it's in
-        history". getattr keeps this working with the older inserter interface
-        and with test doubles that don't set the flag.
-        """
-        if getattr(self.inserter, "last_parked_on_clipboard", False):
-            return ("No text field was focused — copied to your clipboard "
-                    "and saved to History.")
-        return "Saved to history — no text field was focused."
+        """Wording for a dictation that never reached a text field."""
+        return "Saved to History — no text field was focused."
 
     def is_recording(self) -> bool:
         return self.sm.state.name == "RECORDING"

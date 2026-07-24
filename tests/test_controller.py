@@ -260,35 +260,15 @@ def test_on_result_fires_inserted_false_when_no_text_field():
     assert any("history" in n.lower() for n in notices)
 
 
-def test_undelivered_notice_mentions_the_clipboard_when_text_was_parked():
-    # The inserter parks text it couldn't deliver on the clipboard, so the
-    # notice should tell the user it's one paste away — not just "in history".
-    inserter = RecordingInserter(outcome="no_target")
-    inserter.last_parked_on_clipboard = True
-    ctrl, rec, trans, inserter, states, results, notices, errors = build(
-        inserter=inserter)
-    ctrl.start_recording()
-    ctrl.stop_recording()
-    assert any("clipboard" in n.lower() for n in notices)
-
-
-def test_undelivered_notice_omits_the_clipboard_when_parking_failed():
-    inserter = RecordingInserter(outcome="no_target")
-    inserter.last_parked_on_clipboard = False
-    ctrl, rec, trans, inserter, states, results, notices, errors = build(
-        inserter=inserter)
-    ctrl.start_recording()
-    ctrl.stop_recording()
-    assert notices
-    assert not any("clipboard" in n.lower() for n in notices)
-
-
-def test_undelivered_notice_survives_an_inserter_without_the_flag():
-    # Older inserter interface / test doubles: must not raise.
+def test_undelivered_notice_never_mentions_the_clipboard():
+    # An undeliverable dictation goes to the dashboard, not the clipboard —
+    # taking someone's clipboard without asking is the bug, not the fallback.
     ctrl, rec, trans, inserter, states, results, notices, errors = build(
         inserter=RecordingInserter(outcome="no_target"))
     ctrl.start_recording()
     ctrl.stop_recording()
+    assert notices
+    assert not any("clipboard" in n.lower() for n in notices)
     assert any("history" in n.lower() for n in notices)
 
 
