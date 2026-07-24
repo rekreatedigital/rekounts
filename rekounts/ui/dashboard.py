@@ -263,13 +263,15 @@ class _BarChart(QtWidgets.QWidget):
             p.drawRoundedRect(QtCore.QRectF(x, y, bar_w, bh), 2, 2)
             x += bar_w + gap
 
-        # sparse date ticks (first, middle, last)
+        # sparse date ticks (first, middle, last), each kept inside the widget:
+        # the first one's natural position is negative, which clipped it to "l 04".
         p.setPen(QtGui.QPen(QtGui.QColor(TEXT_3)))
         f = p.font(); f.setPointSize(8); p.setFont(f)
+        tick_w = 40
         for idx in {0, n // 2, n - 1}:
             d = self._data[idx][0]
-            tx = idx * (bar_w + gap)
-            p.drawText(QtCore.QRectF(tx - 12, h - pad_b + 4, 40, 16),
+            tx = min(max(idx * (bar_w + gap) - 12, 0.0), max(0.0, w - tick_w))
+            p.drawText(QtCore.QRectF(tx, h - pad_b + 4, tick_w, 16),
                        QtCore.Qt.AlignLeft, d.strftime("%b %d"))
 
 
@@ -277,6 +279,10 @@ class _StatCard(QtWidgets.QWidget):
     def __init__(self, label):
         super().__init__()
         self.setObjectName("StatCard")
+        # Qt only auto-enables styled backgrounds for plain QWidgets, so without
+        # this the theme's QWidget#StatCard rule (surface, border, radius) is a
+        # dead rule and the Insights numbers float on the page background.
+        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
         lay = QtWidgets.QVBoxLayout(self)
         lay.setContentsMargins(16, 14, 16, 14)
         lay.setSpacing(4)
