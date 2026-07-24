@@ -35,6 +35,8 @@ class FakeBackend:
         self._seq = list(seq_values) if seq_values else None
         self.fail_set_text = fail_set_text
 
+        self.type_complete = True   # flip to False to simulate a focus change
+        self.should_continue = None
         self.calls = []
         self.set_text = None
         self.restored = "UNSET"
@@ -85,9 +87,13 @@ class FakeBackend:
         self.calls.append("paste")
         self.pastes += 1
 
-    def type_unicode(self, text, delay=0.0):
+    def type_unicode(self, text, delay=0.0, should_continue=None):
         self.calls.append("type")
         self.typed.append(text)
+        # Real backends report whether the whole message got delivered; the
+        # policy layer turns False into NO_TARGET + a clipboard fallback.
+        self.should_continue = should_continue
+        return self.type_complete
 
 
 def make(mode="paste", **backend_kwargs):
@@ -159,6 +165,14 @@ def test_no_target_returns_no_target_without_pasting():
     ins, be = make(no_target=True)
     assert ins.insert("hello") == InsertResult.NO_TARGET
     assert be.pastes == 0
+    assert be.typed == []          # nothing was sprayed at the non-target
+
+
+def test_no_target_without_fallback_leaves_clipboard_alone():
+    be = FakeBackend(no_target=True)
+    ins = TextInserter(restore_delay=0, modifier_timeout=0.05, backend=be,
+                       clipboard_fallback=False)
+    assert ins.insert("hello") == InsertResult.NO_TARGET
     assert "set_text" not in be.calls
 
 
@@ -218,7 +232,7 @@ def test_paste_failure_falls_back_to_typing():
 def test_total_failure_returns_failed():
     ins, be = make(fail_set_text=True)
     # break the fallback too
-    def boom(text, delay=0.0):
+    def boom(text, delay=0.0, should_continue=None):
         raise RuntimeError("no input")
     be.type_unicode = boom
     assert ins.insert("hello") == InsertResult.FAILED
@@ -253,6 +267,125 @@ def test_on_notice_silent_on_success():
                        on_notice=notices.append, backend=be)
     ins.insert("hello")
     assert notices == []
+
+
+# --------------------------------------------------------------------------
+# Long text in keystroke mode goes via the clipboard
+#
+# Synthesized keystrokes cannot deliver a long transcript intact: SendInput
+# queues events far ahead of the app consuming them, so anything the user does
+# mid-delivery corrupts the tail and cannot be retracted (measured in
+# tools/injection_harness.py). Long text therefore takes the paste path, which
+# hands the whole string over in one operation.
+# --------------------------------------------------------------------------
+LONG = "word " * 60          # 300 chars, well past _KEYSTROKE_SAFE_CHARS
+SHORT = "just a few words"   # comfortably under it
+
+
+def test_keystroke_mode_types_short_text_literally():
+    ins, be = make(mode="keystroke")
+    assert ins.insert(SHORT) == InsertResult.TYPED
+    assert be.typed == [SHORT]
+    assert be.pastes == 0
+
+
+def test_keystroke_mode_sends_long_text_via_clipboard():
+    ins, be = make(mode="keystroke")
+    assert ins.insert(LONG) == InsertResult.PASTED
+    assert be.pastes == 1
+    assert be.typed == []
+    assert be.set_text == LONG
+
+
+def test_keystroke_long_text_falls_back_to_typing_when_paste_fails():
+    # The reason people choose keystroke mode is an app that refuses Ctrl+V,
+    # so the escalation must never strand them.
+    ins, be = make(mode="keystroke", fail_set_text=True)
+    assert ins.insert(LONG) == InsertResult.TYPED
+    assert be.typed == [LONG]
+
+
+def test_keystroke_long_text_can_be_forced_to_type():
+    be = FakeBackend()
+    ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
+                       backend=be, long_text_via_paste=False)
+    assert ins.insert(LONG) == InsertResult.TYPED
+    assert be.pastes == 0
+
+
+def test_partial_typing_reports_no_target():
+    # backend abandoned the message mid-way because focus left the target
+    be = FakeBackend()
+    be.type_complete = False
+    ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
+                       backend=be)
+    assert ins.insert(SHORT) == InsertResult.NO_TARGET
+
+
+def test_typing_is_given_a_continue_predicate():
+    ins, be = make(mode="keystroke")
+    ins.insert(SHORT)
+    assert callable(be.should_continue)
+
+
+# --------------------------------------------------------------------------
+# Clipboard fallback for undeliverable text
+# --------------------------------------------------------------------------
+def test_no_target_parks_text_on_clipboard():
+    ins, be = make(no_target=True)
+    assert ins.insert("hello") == InsertResult.NO_TARGET
+    assert be.set_text == "hello"
+    assert ins.last_parked_on_clipboard is True
+    assert "restore" not in be.calls   # deliberately left there to be pasted
+
+
+def test_blocked_parks_text_on_clipboard():
+    ins, be = make(blocked=True)
+    assert ins.insert("hello") == InsertResult.BLOCKED
+    assert be.set_text == "hello"
+    assert ins.last_parked_on_clipboard is True
+
+
+def test_successful_paste_does_not_set_the_parked_flag():
+    ins, be = make()
+    assert ins.insert("hello") == InsertResult.PASTED
+    assert ins.last_parked_on_clipboard is False
+
+
+def test_parked_flag_resets_between_calls():
+    be = FakeBackend(no_target=True)
+    ins = TextInserter(restore_delay=0, modifier_timeout=0.05, backend=be)
+    ins.insert("hello")
+    assert ins.last_parked_on_clipboard is True
+    be.no_target = False
+    ins.insert("hello again")
+    assert ins.last_parked_on_clipboard is False
+
+
+def test_clipboard_park_failure_is_survivable():
+    be = FakeBackend(no_target=True, fail_set_text=True)
+    ins = TextInserter(restore_delay=0, modifier_timeout=0.05, backend=be)
+    assert ins.insert("hello") == InsertResult.NO_TARGET
+    assert ins.last_parked_on_clipboard is False
+
+
+def test_notice_mentions_the_clipboard_when_text_was_parked():
+    notices = []
+    be = FakeBackend(no_target=True)
+    ins = TextInserter(restore_delay=0, modifier_timeout=0.05,
+                       on_notice=notices.append, backend=be)
+    ins.insert("hello")
+    assert "clipboard" in notices[0].lower()
+
+
+def test_notice_omits_the_clipboard_when_parking_was_disabled():
+    notices = []
+    be = FakeBackend(no_target=True)
+    ins = TextInserter(restore_delay=0, modifier_timeout=0.05,
+                       on_notice=notices.append, backend=be,
+                       clipboard_fallback=False)
+    ins.insert("hello")
+    assert "clipboard" not in notices[0].lower()
 
 
 # --------------------------------------------------------------------------

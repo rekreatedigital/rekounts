@@ -34,6 +34,38 @@ Robustness measures (each maps to an audited failure mode):
     with NO_TARGET rather than dumping text into the wrong app.
   * The keystroke path uses SendInput + KEYEVENTF_UNICODE (ctypes) instead of
     pynput's character typing (the documented drop-chars failure mode on Windows).
+  * Synthesized keystrokes are sent in atomic batches, and text long enough to
+    be unsafe that way is delivered through the clipboard instead — see below.
+  * Text that cannot be delivered at all is left on the clipboard rather than
+    discarded, so a dictation is never reduced to a notification.
+
+Why long text is not typed (measured, not assumed)
+--------------------------------------------------
+Sending a transcript as synthesized keystrokes cannot be made reliable on
+Windows, and the fix for the v0.3.0 corruption bug had to account for that.
+
+SendInput is atomic only in the sense that no other thread's events are
+interleaved into the array being *inserted*. It says nothing about *delivery*:
+the events queue up and the target app consumes them over the following
+seconds, each one dispatched against whatever the keyboard and focus state are
+at the moment it is consumed. SendInput also runs far ahead of the app
+consuming it, so by the time the user touches a key we have already committed
+text we can neither retract nor validate.
+
+Measured with ``tools/injection_harness.py`` on a 1351-character passage:
+holding Alt for half a second part-way through destroyed 777 characters when
+the whole message went out as one giant atomic call, and still 503 with small
+chunks plus revalidation between them. Switching apps mid-delivery lost 1199
+characters and sprayed 1225 of them into the window the user had moved to.
+There is no chunk size that fixes this — the producer/consumer gap is the
+defect, not the call granularity.
+
+A clipboard paste has no such gap: the target pulls the entire string in one
+operation, so it is all-or-nothing by construction. The same abuse that
+destroyed most of the message leaves a pasted transcript byte-exact. Hence
+:data:`_KEYSTROKE_SAFE_CHARS`: short text (live typing's word-by-word
+increments) is still typed literally, and anything longer is handed over via
+the clipboard, falling back to typing if the target refuses a paste.
 
 "Is a text field focused?" — decision & limits
 ----------------------------------------------
@@ -74,6 +106,16 @@ class InsertResult(str, Enum):
 
     def __str__(self) -> str:  # so f"{result}" / logging shows "pasted", not the enum repr
         return self.value
+
+
+# Outcomes where the text never reached the user's cursor. These are the cases
+# that earn the clipboard fallback — a dictation the app couldn't type should
+# still be one Ctrl+V away, not just a line in History.
+_UNDELIVERED = frozenset({
+    InsertResult.NO_TARGET,
+    InsertResult.BLOCKED,
+    InsertResult.FAILED,
+})
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +231,7 @@ class _NullBackend:
             self._kb.press("v")
             self._kb.release("v")
 
-    def type_unicode(self, text, delay=0.0):
+    def type_unicode(self, text, delay=0.0, should_continue=None):
         if self._kb is None:
             raise RuntimeError("no keyboard available")
         self._kb.type(text)
@@ -362,10 +404,15 @@ class _MacBackend:
         self._post(down)
         self._post(up)
 
-    def type_unicode(self, text, delay=0.0):
+    def type_unicode(self, text, delay=0.0, should_continue=None):
         # Mirror the Windows path: \r dropped, \n as a real Return keycode
         # (many apps ignore a "typed" newline character), the rest in unicode
         # chunks that need no keymap and survive any layout.
+        #
+        # Unlike Windows there is no atomic multi-event post on macOS — Quartz
+        # events are posted one at a time — so this path is chunked by nature.
+        # ``should_continue`` is honoured between chunks so a focus change at
+        # least stops the remainder rather than spraying it into another app.
         for line_i, line in enumerate(text.replace("\r", "").split("\n")):
             if line_i:
                 self._send_keycode(_KVK_RETURN)
@@ -375,10 +422,54 @@ class _MacBackend:
                 # Per-character pacing for apps that drop fast synthetic input.
                 for ch in line:
                     self._send_text_chunk(ch)
+                    if should_continue is not None and not should_continue():
+                        return False
                     time.sleep(delay)
             else:
                 for start in range(0, len(line), _MAC_UNICODE_CHUNK):
                     self._send_text_chunk(line[start:start + _MAC_UNICODE_CHUNK])
+                    if should_continue is not None and not should_continue():
+                        return False
+        return True
+
+
+# How many characters go into one SendInput array.
+#
+# A single SendInput call is atomic in the sense Windows documents: no other
+# thread's events are interleaved into the array. MEASURED CAVEAT (see
+# tools/injection_harness.py): that guarantee covers INSERTION into the input
+# queue, not DELIVERY. A 1351-character message still takes seconds to drain,
+# and every event is dispatched against the keyboard/focus state at the moment
+# it is consumed — so sending the whole transcript in one giant call does NOT
+# make it safe. Holding Alt part-way through such a call still destroyed 777 of
+# 1351 characters, because the queued events became WM_SYSCHAR on arrival.
+#
+# So the chunk is deliberately SMALL. It bounds how much text is already
+# committed to the queue and therefore beyond recall when the user touches a
+# key, and it creates frequent points where the policy layer can re-check
+# modifiers and focus before committing any more. Chunks split on CHARACTER
+# boundaries, so a UTF-16 surrogate pair is never torn across two calls.
+_WIN_ATOMIC_CHUNK_CHARS = 48
+
+# Above this many characters, synthesized keystrokes are not a safe way to
+# deliver a dictation and we hand the text over via the clipboard instead.
+#
+# This is not a tuning knob picked by feel — it follows from a measured
+# property of SendInput. Injected events are QUEUED, and SendInput runs far
+# ahead of the app consuming them, so by the time the user touches a key we
+# have already committed text we cannot retract and cannot validate. Measured
+# with tools/injection_harness.py on a 1351-character passage: holding Alt for
+# half a second mid-delivery destroyed 777 characters with one giant atomic
+# call and still 503 with small chunks plus between-chunk revalidation. There
+# is no chunk size that fixes it, because the producer/consumer gap is the
+# defect, not the call granularity.
+#
+# A clipboard paste has no such gap: the app pulls the whole string in one
+# operation, so it is all-or-nothing by construction. Short text (live typing's
+# word-by-word increments, brief phrases) still goes out as real keystrokes,
+# where the exposure is a few tens of milliseconds and pasting would clobber
+# the clipboard for no benefit.
+_KEYSTROKE_SAFE_CHARS = 100
 
 
 class _Win32Backend:
@@ -663,35 +754,87 @@ class _Win32Backend:
             self._key_event(vk=VK_CONTROL, flags=self._KEYEVENTF_KEYUP),
         ])
 
-    def _send_unicode(self, code):
-        self._send([
-            self._key_event(scan=code, flags=self._KEYEVENTF_UNICODE),
-            self._key_event(scan=code,
-                            flags=self._KEYEVENTF_UNICODE | self._KEYEVENTF_KEYUP),
-        ])
+    def _char_events(self, ch):
+        """Every INPUT event one character needs, as an indivisible group.
 
-    def _send_vk(self, vk):
-        self._send([
-            self._key_event(vk=vk),
-            self._key_event(vk=vk, flags=self._KEYEVENTF_KEYUP),
-        ])
+        Returning per-character groups is what keeps a UTF-16 surrogate pair
+        (two events each, four in total) inside a single SendInput call — split
+        across two calls the target app can receive a lone surrogate and render
+        the replacement glyph instead of the astral character.
+        """
+        if ch == "\r":
+            return []
+        if ch == "\n":
+            # A synthesized newline has to be a real Return key: many apps
+            # ignore a "typed" \n character.
+            return [self._key_event(vk=VK_RETURN),
+                    self._key_event(vk=VK_RETURN, flags=self._KEYEVENTF_KEYUP)]
+        code = ord(ch)
+        if code > 0xFFFF:  # astral plane -> UTF-16 surrogate pair
+            code -= 0x10000
+            units = (0xD800 + (code >> 10), 0xDC00 + (code & 0x3FF))
+        else:
+            units = (code,)
+        events = []
+        for unit in units:
+            events.append(self._key_event(
+                scan=unit, flags=self._KEYEVENTF_UNICODE))
+            events.append(self._key_event(
+                scan=unit,
+                flags=self._KEYEVENTF_UNICODE | self._KEYEVENTF_KEYUP))
+        return events
 
-    def type_unicode(self, text, delay=0.0):
+    def type_unicode(self, text, delay=0.0, should_continue=None):
+        """Type ``text``. Returns True if all of it was delivered.
+
+        ``should_continue`` is an optional predicate consulted *between*
+        SendInput calls. Returning False abandons the remainder — the caller
+        then knows the delivery was partial and can park the full text on the
+        clipboard instead of leaving the user with half a sentence and no
+        explanation.
+        """
+        if delay:
+            # Explicit pacing is mutually exclusive with atomicity: the caller
+            # has asked for gaps. Kept for apps that drop fast synthetic input;
+            # nothing sets it by default.
+            return self._type_paced(text, delay, should_continue)
+
+        batch = []
+        chars = 0
+        first = True
         for ch in text:
-            if ch == "\r":
-                continue
-            if ch == "\n":
-                self._send_vk(VK_RETURN)
-            else:
-                code = ord(ch)
-                if code > 0xFFFF:  # astral plane -> UTF-16 surrogate pair
-                    code -= 0x10000
-                    self._send_unicode(0xD800 + (code >> 10))
-                    self._send_unicode(0xDC00 + (code & 0x3FF))
-                else:
-                    self._send_unicode(code)
-            if delay:
-                time.sleep(delay)
+            batch.extend(self._char_events(ch))
+            chars += 1
+            if chars >= _WIN_ATOMIC_CHUNK_CHARS:
+                if not self._flush(batch, should_continue, first):
+                    return False
+                batch, chars, first = [], 0, False
+        return self._flush(batch, should_continue, first)
+
+    def _flush(self, events, should_continue, first):
+        """Send one atomic array. Returns False if delivery was abandoned."""
+        if not events:
+            return True
+        # The caller's guard already validated the target before the first
+        # call; only re-validate when we were forced to break the message up.
+        if not first and should_continue is not None and not should_continue():
+            log.warning("target changed mid-injection; abandoning the remaining "
+                        "text (it is preserved in history)")
+            return False
+        self._send(events)
+        return True
+
+    def _type_paced(self, text, delay, should_continue=None):
+        for ch in text:
+            events = self._char_events(ch)
+            if events:
+                self._send(events)
+            if should_continue is not None and not should_continue():
+                log.warning("target changed mid-injection; abandoning the "
+                            "remaining text (it is preserved in history)")
+                return False
+            time.sleep(delay)
+        return True
 
 
 def _make_backend():
@@ -737,53 +880,81 @@ class TextInserter:
         dictation cannot be inserted (no target / elevated window / failure). The
         returned :class:`InsertResult` is the primary signal; this callback is a
         convenience so notices work before the history layer is wired.
+    long_text_via_paste:
+        In ``"keystroke"`` mode, deliver text longer than
+        ``_KEYSTROKE_SAFE_CHARS`` through the clipboard instead, because
+        synthesized keystrokes cannot deliver a long transcript intact. Set
+        False to force literal keystrokes at the documented cost.
+    clipboard_fallback:
+        When the text cannot be delivered (nothing editable focused, an elevated
+        window, or an injection failure), leave it on the clipboard so the user
+        can paste it themselves instead of losing the dictation to a notice.
+        Whether that happened is reported by :attr:`last_parked_on_clipboard`.
     backend:
         Injectable platform backend (for tests). Defaults to the platform backend.
     """
 
     def __init__(self, mode="paste", restore_delay=0.2, *, key_delay=0.0,
-                 modifier_timeout=2.0, on_notice=None, backend=None):
+                 modifier_timeout=2.0, on_notice=None, backend=None,
+                 clipboard_fallback=True, long_text_via_paste=True):
         self.mode = mode
+        self.long_text_via_paste = long_text_via_paste
         self.restore_delay = restore_delay
         self.key_delay = key_delay
         self.modifier_timeout = modifier_timeout
         self.on_notice = on_notice
+        self.clipboard_fallback = clipboard_fallback
+        # Set by every insert() call: True when that dictation could not be
+        # delivered but was parked on the clipboard instead. The controller
+        # reads it to word the notice accurately.
+        self.last_parked_on_clipboard = False
         self.backend = backend if backend is not None else _make_backend()
 
     # -- public -------------------------------------------------------------
     def capture_target(self):
         """Return the current foreground window handle (opaque).
 
-        The controller can call this at hotkey-release time and pass the result to
-        :meth:`insert` so a focus change during the (~0.7s) transcription is
-        detected. Without it, :meth:`insert` captures the target at call time,
-        which still catches focus changes during the modifier-release wait.
+        NOT used by the dictation flow, by product decision: the transcript is
+        delivered to whatever is focused when dictation ENDS, so that speaking
+        while alt-tabbing around and finishing on a different field puts the
+        text in that field. Pinning the target to where dictation STARTED would
+        break exactly that. :meth:`insert` therefore captures the target itself
+        at call time, which still catches focus changes during the
+        modifier-release wait.
+
+        Kept as a public hook for callers that genuinely want start-pinned
+        delivery (nothing in the app does today).
         """
         return self.backend.foreground_window()
 
     def insert(self, text: str, target=None) -> InsertResult:
         """Insert ``text``; return an :class:`InsertResult` describing the outcome.
 
-        ``target`` — optional expected foreground window (from
-        :meth:`capture_target`). If focus has moved away from it, insertion is
-        aborted with ``NO_TARGET`` rather than landing text in the wrong app.
+        ``target`` — optional expected foreground window. Defaults to whatever
+        is focused right now, which is what the product promises: the transcript
+        goes wherever the cursor is when dictation ENDS, no matter which app the
+        user wandered through while speaking.
         """
+        self.last_parked_on_clipboard = False
         if not text:
             return InsertResult.SKIPPED
 
         expected = target if target is not None else self.backend.foreground_window()
 
         if self.mode == "keystroke":
-            return self._notify(self._do_type(text, expected))
-        try:
-            result = self._do_paste(text, expected)
-        except Exception as e:
-            log.warning("paste failed (%s); using keystroke fallback", e)
+            result = self._do_keystroke(text, expected)
+        else:
             try:
-                result = self._do_type(text, expected)
-            except Exception as e2:
-                log.error("keystroke fallback also failed: %s", e2)
-                result = InsertResult.FAILED
+                result = self._do_paste(text, expected)
+            except Exception as e:
+                log.warning("paste failed (%s); using keystroke fallback", e)
+                try:
+                    result = self._do_type(text, expected)
+                except Exception as e2:
+                    log.error("keystroke fallback also failed: %s", e2)
+                    result = InsertResult.FAILED
+        if result in _UNDELIVERED:
+            self._park_on_clipboard(text)
         return self._notify(result)
 
     # -- internals ----------------------------------------------------------
@@ -816,6 +987,24 @@ class TextInserter:
             return InsertResult.BLOCKED
         return None
 
+    def _do_keystroke(self, text, expected):
+        """Keystroke mode, but not at the cost of delivering a broken message.
+
+        Long text goes out via the clipboard because keystroke synthesis
+        provably cannot deliver it intact (see ``_KEYSTROKE_SAFE_CHARS``). The
+        user's choice of keystroke mode is still honoured wherever it can be
+        honoured safely — short text — and if pasting fails for the reason
+        people usually pick keystroke mode in the first place (an app that
+        refuses Ctrl+V), we fall straight back to typing it.
+        """
+        if self.long_text_via_paste and len(text) > _KEYSTROKE_SAFE_CHARS:
+            try:
+                return self._do_paste(text, expected)
+            except Exception as e:
+                log.warning("clipboard delivery of a long dictation failed (%s); "
+                            "falling back to synthesized keystrokes", e)
+        return self._do_type(text, expected)
+
     def _do_paste(self, text, expected):
         abort = self._guard(expected)
         if abort is not None:
@@ -836,25 +1025,93 @@ class TextInserter:
             log.info("clipboard changed after paste; skipping restore to avoid clobber")
         return InsertResult.PASTED
 
+    def _ready_for_next_chunk(self, expected):
+        """Gate between two SendInput calls: safe to commit more text?
+
+        This is where the keystroke path actually earns its reliability. Sending
+        one huge atomic array does not help (the queue drains against live
+        keyboard state), so instead we commit little and often, and before each
+        further commitment:
+
+          * wait for physical modifiers to be released — the user re-pressing
+            the dictation hotkey mid-insert is what turned the rest of the
+            message into WM_SYSCHAR and dropped it. Waiting means the message
+            resumes intact after they let go instead of being eaten.
+          * confirm the foreground window is still the one we validated. If the
+            user switched apps, we stop rather than spray the tail into
+            whatever they opened; the caller parks the full text on the
+            clipboard and says so.
+        """
+        self._wait_for_modifiers()
+        hwnd = self.backend.foreground_window()
+        if self.backend.is_no_target(hwnd):
+            return False
+        return expected is None or hwnd is None or hwnd == expected
+
     def _do_type(self, text, expected):
         abort = self._guard(expected)
         if abort is not None:
             return abort
-        self.backend.type_unicode(text, self.key_delay)
+        try:
+            complete = self.backend.type_unicode(
+                text, self.key_delay,
+                should_continue=lambda: self._ready_for_next_chunk(expected))
+        except Exception as e:
+            # SendInput refusing the array (UIPI, a stuck low-level hook) used
+            # to escape insert() entirely; report it as an outcome so the text
+            # still gets the clipboard fallback and the history notice.
+            log.error("keystroke injection failed: %s", e)
+            return InsertResult.FAILED
+        if complete is False:
+            # Delivery stopped early because focus left the target. Whatever
+            # already landed stays, but the user is told and gets the whole
+            # transcript on the clipboard rather than a truncated sentence.
+            return InsertResult.NO_TARGET
         return InsertResult.TYPED
+
+    def _park_on_clipboard(self, text):
+        """Leave an undeliverable dictation on the clipboard.
+
+        Deliberately does NOT restore the previous clipboard: the whole point is
+        that the text is still there for the user to paste. The notice says so,
+        so it is never a silent clobber.
+        """
+        if not self.clipboard_fallback:
+            return False
+        try:
+            self.backend.set_clipboard_text(text)
+        except Exception as e:
+            log.warning("could not park the dictation on the clipboard: %s", e)
+            return False
+        self.last_parked_on_clipboard = True
+        return True
 
     def _notify(self, result):
         if self.on_notice is None:
             return result
-        msg = {
-            InsertResult.NO_TARGET:
-                "No text field in focus — nothing was pasted.",
-            InsertResult.BLOCKED:
-                "Can't paste into an admin window. Run Rekounts as "
-                "administrator to dictate there.",
-            InsertResult.FAILED:
-                "Couldn't insert the dictated text.",
-        }.get(result)
+        parked = self.last_parked_on_clipboard
+        if parked:
+            msg = {
+                InsertResult.NO_TARGET:
+                    "No text field in focus — the transcript is on your "
+                    "clipboard (and in History).",
+                InsertResult.BLOCKED:
+                    "Can't type into an admin window — the transcript is on "
+                    "your clipboard (and in History).",
+                InsertResult.FAILED:
+                    "Couldn't insert the dictated text — it's on your "
+                    "clipboard (and in History).",
+            }.get(result)
+        else:
+            msg = {
+                InsertResult.NO_TARGET:
+                    "No text field in focus — nothing was pasted.",
+                InsertResult.BLOCKED:
+                    "Can't paste into an admin window. Run Rekounts as "
+                    "administrator to dictate there.",
+                InsertResult.FAILED:
+                    "Couldn't insert the dictated text.",
+            }.get(result)
         if msg:
             try:
                 self.on_notice(msg)
