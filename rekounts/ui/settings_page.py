@@ -21,6 +21,7 @@ from rekounts.device_utils import classify_level, resolve_input_device
 from rekounts.hotkey_manager import DEFAULT_HOTKEY, is_valid_hotkey
 from rekounts.languages import LANGUAGES
 from rekounts.network_facts import statement as network_statement
+from rekounts.scratchpad_store import ScratchpadStore
 from rekounts.ui import theme
 
 log = logging.getLogger(__name__)
@@ -440,6 +441,9 @@ class SettingsPage(QtWidgets.QWidget):
         # standalone construction stay hermetic — no registry access.
         self._startup_getter = startup_getter or (
             lambda: bool(self.config.get("launch_on_startup")))
+        # Replaced by __main__ with the live pad's own clear; see
+        # set_scratchpad_clearer.
+        self._scratchpad_clearer = self._clear_scratchpad_file
 
         self._apply_timer = QtCore.QTimer(self)
         self._apply_timer.setSingleShot(True)
@@ -895,13 +899,25 @@ class SettingsPage(QtWidgets.QWidget):
         self.history_enabled = self._switch("history_enabled", self._apply_history)
         sec.add(SettingsRow(
             "Save dictation history", self.history_enabled,
-            "Off means nothing is written to disk — the Dictation page stays empty."))
+            "Off means no dictation is written to history.db — the Dictation "
+            "page stays empty. The Scratchpad keeps its own note either way; "
+            "clear it below."))
 
         self.clear_btn = QtWidgets.QPushButton("Clear all…")
         self.clear_btn.setObjectName("Danger")
         self.clear_btn.clicked.connect(self._clear_history)
         self.clear_row = sec.add(SettingsRow(
             "Clear saved dictations", self.clear_btn, self._history_count_hint()))
+
+        # The Scratchpad autosaves what you write into it, including dictated
+        # text, and it does NOT follow the history switch above — see the note on
+        # _clear_scratchpad. That makes it the one piece of your text with no way
+        # to see it or get rid of it from here, which is what this row fixes.
+        self.clear_note_btn = QtWidgets.QPushButton("Clear note…")
+        self.clear_note_btn.setObjectName("Danger")
+        self.clear_note_btn.clicked.connect(self._clear_scratchpad)
+        self.scratchpad_row = sec.add(SettingsRow(
+            "Scratchpad note", self.clear_note_btn, self._scratchpad_hint()))
 
         data_dir = str(default_config_path().parent)
         open_btn = self._ghost("Open folder", lambda: self._open_folder(data_dir))
@@ -928,6 +944,80 @@ class SettingsPage(QtWidgets.QWidget):
         # effect on the very next dictation, with no rebuild and no restart.
         if self.history is not None:
             self.history.enabled = bool(enabled)
+
+    # ------------------------------------------------------- the Scratchpad
+    def set_scratchpad_clearer(self, clearer):
+        """Point **Clear note** at the live pad instead of at the file.
+
+        Wired by __main__ once the pad exists. It matters which one runs: an
+        open pad autosaves on a pause in typing, so deleting scratchpad.json
+        underneath it would just get the note written straight back out. Without
+        this the page falls back to clearing the file, which is correct in every
+        situation where there is no pad to ask — tests, the Hub opened
+        standalone, and a build where the feature is off.
+        """
+        self._scratchpad_clearer = clearer
+
+    def _scratchpad_hint(self) -> str:
+        """Say whether there is a note, and that it saved itself. Never raises.
+
+        Names the file rather than the full path — "Where your data lives" is
+        the next row down and already has the folder. What the user cannot work
+        out for themselves is that the note is written without them asking.
+        """
+        try:
+            if not ScratchpadStore().load().get("html", "").strip():
+                return "Nothing written yet."
+            return ("Saved automatically to scratchpad.json in your data "
+                    "folder, as you type.")
+        except Exception:
+            return ""
+
+    def _clear_scratchpad(self):
+        """Empty the note, after asking.
+
+        Why this is a separate control rather than something the "Save dictation
+        history" switch turns off:
+
+        The history is a RECORD the app keeps of what you dictated — passive,
+        automatic, and something you can plausibly want never to exist. The
+        Scratchpad is a DOCUMENT you are writing. Its text is on screen in front
+        of you and you expect it to still be there tomorrow, exactly like an
+        unsaved file in an editor. Wiring it to the history switch would mean
+        that turning on a privacy setting silently threw away an open note; that
+        is data loss wearing a privacy hat, and no user asking for "don't record
+        my dictations" is asking for "and delete what I am writing".
+
+        So it gets its own explicit action instead — visible in the same place,
+        clearly labelled, and confirmed before anything is deleted. The claim
+        docs/privacy.md has to be able to make is "you can see it and you can
+        get rid of it", and that is what this satisfies.
+        """
+        ok = QtWidgets.QMessageBox.question(
+            self, "Clear the Scratchpad note",
+            "Permanently delete everything in the Scratchpad? This cannot be "
+            "undone.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No)
+        if ok != QtWidgets.QMessageBox.Yes:
+            return
+        try:
+            self._scratchpad_clearer()
+        except Exception as e:
+            log.warning("could not clear the scratchpad: %s", e)
+            self.scratchpad_row.set_hint(f"Could not clear the note: {e}")
+            return
+        self.scratchpad_row.set_hint(self._scratchpad_hint())
+
+    @staticmethod
+    def _clear_scratchpad_file():
+        """Fallback clearer: empty the note on disk.
+
+        Writes an empty note rather than deleting the file, so the pad's next
+        load takes the ordinary "you have a blank note" path instead of the
+        missing-file one.
+        """
+        ScratchpadStore().save("", None)
 
     def _clear_history(self):
         if self.history is None or not self.history.count():

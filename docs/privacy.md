@@ -32,6 +32,8 @@ Everything lives in `%APPDATA%\Rekounts` (on macOS:
 | `config.json` | Your settings: hotkey, microphone name, model, language, cleanup toggles, insertion mode, and the local display name / avatar path if you set them. Plain JSON — open it, read it, edit it. |
 | `history.db` | A SQLite database of your dictations: the raw transcript, the cleaned text, a UTC timestamp, how long you spoke, the word count, and whether the text was successfully inserted. Also holds your Dictionary entries. |
 | `logs\rekounts.log` | A rotating diagnostic log (max 1 MB, 3 backups). It records startup, model loading, errors, and audio *durations* — **not** your transcripts. |
+| `logs\rekounts-crash.log` | Empty unless the app has crashed hard enough to take the whole process down. It holds the native stack trace of that crash and nothing else — no text, no audio, no settings. Delete it whenever you like. |
+| `scratchpad.json` | **Your Scratchpad note**, saved automatically. See [The Scratchpad](#the-scratchpad) below — this one holds text you wrote or dictated, and it is not covered by the dictation-history switch. |
 
 | `models\<name>\` | The downloaded speech model (~148 MB for `base`, ~486 MB for `small`, ~1.5 GB for `medium`). Four plain files per model — delete a folder to reclaim the space; it is re-downloaded only if you select that model again. |
 
@@ -87,6 +89,45 @@ your Windows user profile can read these files, exactly like your documents.
   Data & Privacy — it takes effect on your very next dictation, no restart.
   (`"history_enabled": false` in `config.json` is the same switch.) With it
   off, `History.add()` does nothing — no rows are written at all.
+
+**This switch covers `history.db` and nothing else.** In particular it does not
+cover the Scratchpad: if you have written or dictated into the note, that text is
+in `scratchpad.json` and stays there whether history is on or off, and deleting
+`history.db` does not touch it. Clearing the note is a separate, deliberate
+action — see below.
+
+## The Scratchpad
+
+The Scratchpad is the floating sticky note you can open from the tray menu and
+dictate into. **It saves what you write there automatically**, about
+three-quarters of a second after you stop typing, and again when you close or
+hide it. There is no Save button, and it is not asking you first. That is the
+point of a sticky note — it is still there tomorrow — but it does mean the
+Scratchpad is the one place in Rekounts where your text sits on disk without you
+having decided to put it there.
+
+It is saved to `%APPDATA%\Rekounts\scratchpad.json`, as the note's rich text
+(bold, bullets and so on, which is why it is HTML rather than plain text) plus
+the window's last position. It is a plain file — open it and read it. It never
+leaves your machine; nothing above in [When the app touches the
+network](#when-the-app-touches-the-network) reads or sends it.
+
+**Clearing it:** Settings → Data & Privacy → **Clear note**, which asks first
+and then empties both the open note and the file. You can also just delete
+`scratchpad.json` while the app is closed.
+
+**Turning the feature off does not delete your note.** Settings → System →
+**Scratchpad** hides the pad and stops dictation being routed to it; the text
+you had written is deliberately left alone, because turning a feature off is not
+a request to throw away what you wrote. If you want the text gone, clear it.
+
+We chose to keep it that way rather than tying the note to **Save dictation
+history**. The history is a *record* Rekounts keeps of what you dictated; the
+note is a *document you are writing*, on screen in front of you. Wiring the two
+together would mean that switching on a privacy setting silently deleted an open
+note, which is data loss rather than privacy. So the note gets its own explicit
+control instead — you can see it, and you can get rid of it, without either
+happening by surprise.
 
 ## When the app touches the network
 

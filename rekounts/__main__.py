@@ -1322,6 +1322,12 @@ def _run():
         pending.sinks.append(settings_page.set_status)
         settings_page.set_status(pending.message())
 
+    # Point Settings → Data & Privacy → Clear note at the LIVE pad. Its fallback
+    # deletes the file, which an open pad would autosave straight back over.
+    if settings_page is not None and hasattr(settings_page,
+                                             "set_scratchpad_clearer"):
+        settings_page.set_scratchpad_clearer(scratchpad.clear_note)
+
     open_settings = getattr(dashboard, "open_settings", None)
     if not callable(open_settings):
         open_settings = settings.show if settings is not None else dashboard.open_and_raise
