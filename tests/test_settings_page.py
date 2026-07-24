@@ -83,6 +83,14 @@ def test_hedge_switch_is_wired_to_its_config_key(page, cfg):
     assert cfg.get("strip_discourse_fillers") is False
 
 
+def test_long_text_via_paste_switch_is_wired_to_its_config_key(page, cfg):
+    # The documented escape hatch for apps that silently ignore Ctrl+V — a
+    # refused paste is undetectable, so the user needs a way to force typing.
+    assert page.long_text_via_paste.isChecked() is True   # app default: on
+    page.long_text_via_paste.setChecked(False)
+    assert cfg.get("long_text_via_paste") is False
+
+
 def test_burst_of_changes_coalesces_into_one_apply(page):
     page.strip_fillers.setChecked(not page.strip_fillers.isChecked())
     page.auto_cap.setChecked(not page.auto_cap.isChecked())
@@ -343,32 +351,6 @@ def test_launch_at_login_updates_the_registry_entry(page, cfg):
 
 
 # --------- finding 3: speech-model selector is inert while live typing on -----
-def test_model_selector_is_disabled_and_annotated_while_live_typing_on(
-        app, cfg, history, monkeypatch):
-    monkeypatch.setattr("rekounts.ui.settings_page.microphone_options",
-                        lambda: list(FAKE_MICS))
-    cfg.set("live_typing", True)
-    p = SettingsPage(cfg, history)
-    assert p.model.isEnabled() is False
-    assert "streaming model" in p.model_row.hint.text().lower()
-
-
-def test_model_selector_is_live_and_normally_hinted_when_live_typing_off(page):
-    assert page.model.isEnabled() is True
-    assert "accurate" in page.model_row.hint.text().lower()
-
-
-def test_toggling_live_typing_updates_the_model_selector_live(page):
-    assert page.model.isEnabled() is True
-    page.live_typing.setChecked(True)
-    assert page.model.isEnabled() is False
-    assert "streaming model" in page.model_row.hint.text().lower()
-    page.live_typing.setChecked(False)
-    assert page.model.isEnabled() is True
-    assert "accurate" in page.model_row.hint.text().lower()
-
-
-# ---------- finding 6: launch switch reflects the REAL state (StartupApproved) -
 def test_launch_switch_reflects_the_real_state_not_just_config(
         app, cfg, history, monkeypatch):
     monkeypatch.setattr("rekounts.ui.settings_page.microphone_options",
@@ -422,11 +404,9 @@ def test_launch_at_login_failure_is_reported_not_raised(app, cfg, history,
 def test_every_switch_starts_from_the_stored_value(app, cfg, history, monkeypatch):
     monkeypatch.setattr("rekounts.ui.settings_page.microphone_options",
                         lambda: list(FAKE_MICS))
-    cfg.set("live_typing", True)
     cfg.set("preroll_enabled", True)
     cfg.set("show_pill", False)
     p = SettingsPage(cfg, history)
-    assert p.live_typing.isChecked() is True
     assert p.preroll.isChecked() is True
     assert p.show_pill.isChecked() is False
 

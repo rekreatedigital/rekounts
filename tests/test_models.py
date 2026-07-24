@@ -116,7 +116,6 @@ def test_every_download_url_points_at_our_host_and_never_hugging_face():
 def test_manifest_has_the_models_the_config_defaults_reference():
     from rekounts.config import DEFAULTS
     assert DEFAULTS["model"] in models.MANIFEST
-    assert DEFAULTS["stream_model"] in models.MANIFEST
 
 
 def test_human_size_reads_naturally():

@@ -422,3 +422,23 @@ def test_fallback_never_retries_the_model_that_just_failed():
         "base", "base",
         is_installed=lambda n: True, known=["base", "medium"])
     assert picked == "medium"
+
+
+# --------------------------------------------------------------------------
+# Inserter construction reads the documented config keys
+# --------------------------------------------------------------------------
+def test_inserter_honours_the_long_text_via_paste_config_key():
+    from rekounts.config import DEFAULTS
+
+    assert DEFAULTS["long_text_via_paste"] is True
+    built = app_main._build_inserter({"insertion_mode": "keystroke",
+                                      "long_text_via_paste": False})
+    assert built.long_text_via_paste is False
+    assert built.mode == "keystroke"
+
+
+def test_inserter_honours_the_configured_insertion_mode():
+    built = app_main._build_inserter({"insertion_mode": "paste",
+                                      "long_text_via_paste": True})
+    assert built.mode == "paste"
+    assert built.long_text_via_paste is True

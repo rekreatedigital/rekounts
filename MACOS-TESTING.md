@@ -67,7 +67,7 @@ Default hotkey is `ctrl+win` = **Ctrl+Cmd** on the Mac keyboard.
       copy is still there (restore skipped via changeCount).
 - [ ] While holding the Ctrl+Cmd hotkey through the paste: no stray
       Ctrl+Cmd+V side effects (modifier wait).
-- [ ] Live typing ON → words stream as keystrokes; ü/é/emoji arrive intact.
+- [ ] Dictate ü/é/emoji → they arrive intact (keystroke mode).
 - [ ] Focus a different app during transcription → toast "No text field in
       focus", nothing pasted into the wrong app. KNOWN LIMIT: focus tracking
       is per-APP on macOS (frontmost pid), not per-window — switching windows

@@ -4,7 +4,7 @@ import time
 
 from rekounts.audio_utils import normalize_gain
 from rekounts.state_machine import StateMachine
-from rekounts.text_stream import LiveTyper
+from rekounts.text_inserter import undelivered_message
 from rekounts.transcriber import is_hallucination
 
 log = logging.getLogger(__name__)
@@ -19,6 +19,10 @@ _INSERT_FAILURE_TOKENS = frozenset({
     # UIPI: the target window is elevated and rejected the injection — the text
     # never landed, so it must count as not-inserted (history is the safety net).
     "blocked",
+    # Keystroke delivery stopped part-way because a physical modifier stayed
+    # held. Some of the text may have landed, but not the message, so the user
+    # gets a notice pointing at History rather than a silent half-sentence.
+    "interrupted",
 })
 
 
@@ -42,7 +46,7 @@ class AppController:
     def __init__(self, recorder, transcriber, cleaner, inserter,
                  on_overlay_show=None, on_overlay_hide=None,
                  on_error=None, on_notice=None, min_seconds=0.3, run_async=None,
-                 live_typing=False, on_state=None, on_result=None,
+                 on_state=None, on_result=None,
                  max_recording_seconds=0, filter_hallucinations=True,
                  on_recording_ended=None, warn_before_seconds=30, clock=None):
         self.recorder = recorder
@@ -78,11 +82,6 @@ class AppController:
         # run_async(fn): schedule heavy work off the caller thread.
         # In tests it's None -> runs synchronously.
         self.run_async = run_async
-        # live_typing is the CONFIGURED mode and can change at any moment (the
-        # settings window live-applies it). live_typing_active is the mode this
-        # utterance was started in — see start_recording().
-        self.live_typing = live_typing
-        self.live_typing_active = False
         self.filter_hallucinations = filter_hallucinations
         # Safety cap (seconds) for a recording the user forgets to stop (toggle
         # mode). 0/None disables it. Enforced by a daemon timer.
@@ -100,9 +99,6 @@ class AppController:
         self._recording_started_at = 0.0
         self.sm = StateMachine()
         self._last_state = self.sm.state.value
-        # Shared with the streaming loop in live mode. Tracks how many words have
-        # been typed so the release pass only appends the remaining tail.
-        self.live_typer = LiveTyper()
 
     # --- state notification -------------------------------------------------
     def _sync_state(self):
@@ -210,16 +206,6 @@ class AppController:
         if not self.sm.to_recording():
             return False
         self._sync_state()
-        # Freeze the typing mode for THIS utterance. live_typing can be toggled
-        # from the settings window mid-recording; if the streaming loop and the
-        # release pass disagree the user gets either raw uncleaned text
-        # (OFF -> ON: _finish_live skips TextCleaner entirely) or text inserted
-        # twice (ON -> OFF: streamed words plus a full cleaned insert). One
-        # snapshot keeps a single recording internally consistent, and the new
-        # mode takes effect from the next recording — which is what the user
-        # who just changed the setting is expecting anyway.
-        self.live_typing_active = bool(self.live_typing)
-        self.live_typer = LiveTyper()   # fresh word counter per utterance
         try:
             if getattr(self.recorder, "fell_back_to_default", False):
                 self.on_notice("Saved microphone not found — using system default.")
@@ -294,12 +280,7 @@ class AppController:
             # Boost quiet microphones so low-gain input survives Whisper's VAD.
             audio = normalize_gain(audio)
             raw = self.transcriber.transcribe(audio)
-            # The mode this recording STARTED in, not whatever the config says
-            # now — see start_recording().
-            if self.live_typing_active:
-                self._finish_live(raw, duration_s)
-            else:
-                self._finish_final(raw, duration_s)
+            self._finish_final(raw, duration_s)
         except Exception as e:
             self.on_error(f"Transcription failed: {e}")
         finally:
@@ -322,32 +303,22 @@ class AppController:
         outcome = self.inserter.insert(cleaned)
         inserted = _insertion_succeeded(outcome)
         if not inserted:
-            self.on_notice("Saved to history — no text field was focused.")
+            self.on_notice(self._undelivered_notice(outcome))
         # Fire AFTER insertion regardless of outcome: the history is the safety
         # net when the cursor wasn't in a text field.
         self.on_result(raw, cleaned, duration_s, inserted)
 
-    def _finish_live(self, raw, duration_s):
-        had_streamed = self.live_typer._emitted > 0
-        tail = self.live_typer.final_tail(raw)
-        inserted = True
-        if tail:
-            outcome = self.inserter.insert((" " if had_streamed else "") + tail)
-            inserted = _insertion_succeeded(outcome)
-            if not inserted:
-                self.on_notice("Saved to history — no text field was focused.")
-        elif not had_streamed:
-            self.on_notice("No speech detected — check your microphone selection/volume.")
-            return
-        # Live mode types as-you-speak, so raw is effectively the final text.
-        self.on_result(raw, raw, duration_s, inserted)
+    def _undelivered_notice(self, outcome) -> str:
+        """Wording for a dictation that did not reach the cursor.
+
+        This is the notice the user actually sees — the app builds its
+        TextInserter without an ``on_notice`` hook, so the inserter's own table
+        never fires outside tests. It therefore has to be right for EVERY
+        outcome, not just "no text field": see
+        :func:`rekounts.text_inserter.undelivered_message`, which both surfaces
+        now share so they cannot drift.
+        """
+        return undelivered_message(outcome)
 
     def is_recording(self) -> bool:
         return self.sm.state.name == "RECORDING"
-
-    def preview_snapshot(self):
-        """Audio captured so far, or None if not recording / unsupported."""
-        if not self.is_recording():
-            return None
-        snap = getattr(self.recorder, "snapshot", None)
-        return snap() if callable(snap) else None

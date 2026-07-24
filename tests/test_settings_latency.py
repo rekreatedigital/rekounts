@@ -165,15 +165,6 @@ def test_a_broken_provider_falls_back_instead_of_losing_the_dictation(fake_model
     assert fake_model.calls[-1]["language"] == "de"
 
 
-def test_streaming_pass_reads_the_live_language_too(fake_model):
-    """Live typing goes through transcribe_stream — it must not lag behind."""
-    lang = {"v": "en"}
-    t = _transcriber(language="en", language_provider=lambda: lang["v"])
-    lang["v"] = "es"
-    t.transcribe_stream(AUDIO)
-    assert fake_model.calls[-1]["language"] == "es"
-
-
 def test_no_provider_keeps_the_plain_attribute_behaviour(fake_model):
     """Back-compat: the attribute is still the source of truth without a provider."""
     t = _transcriber(language="en")

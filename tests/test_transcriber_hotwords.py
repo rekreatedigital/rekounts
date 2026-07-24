@@ -104,15 +104,6 @@ def test_words_reach_the_model_as_hotwords():
     assert t.model.calls[0]["hotwords"] == "Glossary: Kubernetes."
 
 
-def test_stream_pass_is_biased_too_and_stays_greedy():
-    t = make_transcriber(provider=lambda: ["Kubernetes"])
-    t.transcribe_stream(AUDIO)
-    kwargs = t.model.calls[0]
-    assert kwargs["hotwords"] == "Glossary: Kubernetes."
-    assert kwargs["beam_size"] == 1
-    assert kwargs["vad_filter"] is False
-
-
 def test_provider_is_re_read_on_every_call():
     words = ["Grafana"]
     t = make_transcriber(provider=lambda: list(words))
@@ -145,7 +136,7 @@ def test_broken_provider_never_costs_the_user_their_dictation():
 def test_empty_audio_short_circuits_without_calling_the_model():
     t = make_transcriber(provider=lambda: ["Loki"])
     assert t.transcribe(np.array([], dtype="float32")) == ""
-    assert t.transcribe_stream(None) == ""
+    assert t.transcribe(None) == ""
     assert t.model.calls == []
 
 

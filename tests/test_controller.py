@@ -165,43 +165,14 @@ def test_transcription_error_returns_to_idle():
     assert inserted == []
 
 
-def test_live_mode_types_only_untyped_tail():
-    rec = FakeRecorder(np.ones(16000, dtype="float32"))
-    trans = FakeTranscriber("hello world how are you")
-    inserted = []
-    ctrl = AppController(
-        recorder=rec, transcriber=trans, cleaner=TextCleaner(),
-        inserter=type("I", (), {"insert": lambda self, t: inserted.append(t)})(),
-        min_seconds=0.3, live_typing=True,
-    )
-    ctrl.start_recording()
-    ctrl.live_typer.feed("hello world")   # streaming already typed these 2 words
-    ctrl.stop_recording()
-    assert inserted == [" how are you"]   # only the tail (with leading space)
-
-
-def test_live_mode_types_full_text_when_nothing_streamed():
-    rec = FakeRecorder(np.ones(16000, dtype="float32"))
-    trans = FakeTranscriber("hello world how are you")
-    inserted = []
-    ctrl = AppController(
-        recorder=rec, transcriber=trans, cleaner=TextCleaner(),
-        inserter=type("I", (), {"insert": lambda self, t: inserted.append(t)})(),
-        min_seconds=0.3, live_typing=True,
-    )
-    ctrl.start_recording()
-    ctrl.stop_recording()   # no streaming happened -> release types everything
-    assert inserted == ["hello world how are you"]
-
-
-def test_non_live_mode_unchanged_types_cleaned_full():
+def test_release_types_the_cleaned_full_transcript():
     rec = FakeRecorder(np.ones(16000, dtype="float32"))
     trans = FakeTranscriber("um hello world")
     inserted = []
     ctrl = AppController(
         recorder=rec, transcriber=trans, cleaner=TextCleaner(),
         inserter=type("I", (), {"insert": lambda self, t: inserted.append(t)})(),
-        min_seconds=0.3, live_typing=False,
+        min_seconds=0.3,
     )
     ctrl.start_recording()
     ctrl.stop_recording()
@@ -218,6 +189,10 @@ def test_insertion_outcome_mapping_covers_full_inserter_vocabulary():
         InsertResult.TYPED: True,
         InsertResult.NO_TARGET: False,
         InsertResult.BLOCKED: False,
+        # Typing stopped part-way (a modifier stayed held). Some text may have
+        # landed but not the message, so it counts as not-inserted and the user
+        # gets the clipboard copy plus the notice.
+        InsertResult.INTERRUPTED: False,
         InsertResult.FAILED: False,
         InsertResult.SKIPPED: False,
     }
@@ -282,6 +257,61 @@ def test_on_result_fires_inserted_false_when_no_text_field():
     assert len(results) == 1
     assert results[0][3] is False           # inserted flag
     assert results[0][1] == "Hello world"   # cleaned text still captured
+    assert any("history" in n.lower() for n in notices)
+
+
+def _notice_for(outcome):
+    inserter = RecordingInserter(outcome=outcome)
+    ctrl, rec, trans, inserter, states, results, notices, errors = build(
+        inserter=inserter)
+    ctrl.start_recording()
+    ctrl.stop_recording()
+    assert notices, outcome
+    return notices[0]
+
+
+def test_a_blocked_target_is_not_reported_as_no_text_field():
+    # A field WAS focused; it was an admin window that refused the injection.
+    msg = _notice_for("blocked").lower()
+    assert "no text field" not in msg
+    assert "admin" in msg
+
+
+def test_an_interrupted_delivery_warns_that_part_of_it_already_landed():
+    # The field was focused and part of the sentence is sitting in it. Telling
+    # the user nothing landed makes them paste a duplicate on top from History.
+    msg = _notice_for("interrupted").lower()
+    assert "no text field" not in msg
+    assert "already in the field" in msg
+    assert "held down" in msg
+
+
+def test_a_bare_false_outcome_gets_generic_wording_not_a_wrong_claim():
+    # A legacy/wrapped inserter can report failure without saying which kind.
+    # Guessing "no text field was focused" there is a lie we don't need to tell.
+    msg = _notice_for(False).lower()
+    assert "no text field" not in msg
+    assert "history" in msg
+
+
+def test_the_notice_comes_from_the_inserter_s_one_table():
+    # Two tables drift; this is what stops them being two.
+    from rekounts.text_inserter import InsertResult, undelivered_message
+
+    for outcome in (InsertResult.NO_TARGET, InsertResult.BLOCKED,
+                    InsertResult.INTERRUPTED, InsertResult.FAILED):
+        assert _notice_for(outcome) == undelivered_message(outcome)
+
+
+def test_undelivered_notice_never_mentions_the_clipboard():
+    # An undeliverable dictation goes to the dashboard, not the clipboard —
+    # taking someone's clipboard without asking is the bug, not the fallback.
+    ctrl, rec, trans, inserter, states, results, notices, errors = build(
+        inserter=RecordingInserter(outcome="no_target"))
+    ctrl.start_recording()
+    ctrl.stop_recording()
+    assert notices
+    assert not any("clipboard" in n.lower() for n in notices)
     assert any("history" in n.lower() for n in notices)
 
 
@@ -412,47 +442,6 @@ def test_start_recording_reports_failure_on_microphone_error():
     assert ctrl.start_recording() is False
     assert ctrl.sm.state == DictationState.IDLE
     assert errors and "Microphone error" in errors[0]
-
-
-# --- finding 6: settings changed while a recording is in flight ------------
-def test_live_typing_enabled_mid_recording_does_not_affect_this_clip():
-    # Started with live typing OFF, so this clip must still go through
-    # TextCleaner on release. It used to take the live path and insert the raw
-    # transcript — fillers, no capitalisation — because _process read the
-    # config value at FINISH time.
-    ctrl, rec, trans, inserter, states, results, notices, errors = build(
-        raw_text="um hello world", live_typing=False)
-    ctrl.start_recording()
-    ctrl.live_typing = True            # user hits Save mid-recording
-    ctrl.stop_recording()
-    assert inserter.calls == ["Hello world"]   # cleaned, not raw
-
-
-def test_live_typing_disabled_mid_recording_does_not_double_type():
-    # The mirror image: this clip started live and already had words streamed
-    # into the target, so the release pass must still append only the tail. A
-    # full cleaned insert would type everything twice.
-    ctrl, rec, trans, inserter, states, results, notices, errors = build(
-        raw_text="hello world how are you", live_typing=True)
-    ctrl.start_recording()
-    ctrl.live_typer.feed("hello world")   # streaming already typed these
-    ctrl.live_typing = False              # user hits Save mid-recording
-    ctrl.stop_recording()
-    assert inserter.calls == [" how are you"]
-
-
-def test_mode_change_applies_to_the_next_recording():
-    ctrl, rec, trans, inserter, states, results, notices, errors = build(
-        raw_text="um hello world", live_typing=False)
-    ctrl.start_recording()
-    ctrl.stop_recording()
-    assert inserter.calls == ["Hello world"]
-
-    ctrl.live_typing = True               # Saved between recordings
-    ctrl.start_recording()
-    assert ctrl.live_typing_active is True
-    ctrl.stop_recording()
-    assert inserter.calls[-1] == "um hello world"   # live path: raw as typed
 
 
 # --- finding 5a: warn the user before the cap auto-stops -------------------

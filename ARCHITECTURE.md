@@ -38,7 +38,7 @@ Startup sequence in `_run()`:
    so the first real dictation is not slower than the rest.
 4. **Now** import Qt and build the `Overlay`, `History`, `TrayApp`, `Dashboard`
    (the Hub — settings are a page inside it, not a separate window).
-5. Wire hotkeys → `AppController`; start the live-typing loop; run the Qt event
+5. Wire hotkeys → `AppController`; run the Qt event
    loop.
 
 ### Threading model
@@ -84,17 +84,16 @@ This replaced the old restart-on-save, which raced the single-instance mutex.
 | Module | Responsibility |
 | --- | --- |
 | `__init__.py` | `__version__` — the single source of truth for the version string (`pyproject.toml` and `Rekounts.spec` both read it) |
-| `__main__.py` | Entry point, logging, single-instance mutex, wiring, live-apply, live-typing loop, Qt event loop |
+| `__main__.py` | Entry point, logging, single-instance mutex, wiring, live-apply, Qt event loop |
 | `config.py` | `Config` + `DEFAULTS`; loads/saves `config.json`, backfills missing keys, recovers from corruption, migrates the legacy `ptt_hotkey` into the unified `hotkey` |
 | `controller.py` | `AppController` — orchestrates record → transcribe → clean → insert; drives the state machine; emits `on_state` / `on_result` |
 | `state_machine.py` | `StateMachine` over `IDLE → RECORDING → PROCESSING → IDLE` (rejects illegal transitions) |
-| `audio_recorder.py` | `AudioRecorder` — 16 kHz mono capture via `sounddevice`; optional pre-roll ring buffer; live level + snapshot |
+| `audio_recorder.py` | `AudioRecorder` — 16 kHz mono capture via `sounddevice`; optional pre-roll ring buffer; live level |
 | `audio_utils.py` | `rms_level`, `normalize_gain` — pure-numpy audio helpers (gain-boost quiet mics) |
 | `device_utils.py` | `list_microphones()` — the canonical mic list (one entry per endpoint, full names, DirectSound-only); resolve a saved mic **name** → device index; RMS thresholds for the mic Test button |
-| `transcriber.py` | `Transcriber` — wraps faster-whisper; CPU/CUDA selection, offline-first model loads, dictionary hotwords, warm-up, a model lock so streaming can't race the final pass, and the silence-hallucination phrase set |
+| `transcriber.py` | `Transcriber` — wraps faster-whisper; CPU/CUDA selection, offline-first model loads, dictionary hotwords, warm-up, a model lock so a background warm-up can't race a transcription, and the silence-hallucination phrase set |
 | `text_cleaner.py` | `TextCleaner` — strip fillers, capitalize, fix punctuation spacing, collapse stutters |
 | `text_inserter.py` | `TextInserter` — paste (default) or keystroke insertion behind a Win32 backend; native clipboard save/restore across all formats, modifier-release wait, elevation (UIPI) and focus-change guards; returns an `InsertResult` outcome |
-| `text_stream.py` | `LiveTyper` + `new_suffix` — forward-only word streaming for experimental live typing |
 | `hotkey_manager.py` | `HotkeyManager` — one global hotkey, three gestures (`TapHoldGesture` + `_Combo`); the hotkey-string parser/validator; a `_ThreadedDispatcher` that keeps the OS hook thread free, and a `HotkeyWatchdog` that rebuilds a silently-dead hook / heals a stuck combo |
 | `history.py` | `History` — SQLite store for dictation entries and dictionary words; stats, streaks and daily word counts |
 | `languages.py` | Supported languages (Auto / English / Tagalog) and label↔code mapping |
@@ -162,12 +161,6 @@ release / tap
                                         safety net)
   → [PROCESSING → IDLE]
 ```
-
-Live typing (off by default, experimental) adds a background loop in
-`__main__.py` that periodically transcribes the in-progress buffer and streams
-new words via `LiveTyper`; the release pass then appends only the remaining
-tail. The loop re-checks `controller.live_typing` every iteration so the setting
-can be flipped at runtime.
 
 ## Where things live on disk
 

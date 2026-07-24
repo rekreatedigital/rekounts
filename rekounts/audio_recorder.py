@@ -221,13 +221,6 @@ class AudioRecorder:
             self._preroll.clear()
             self._preroll_samples = 0
 
-    def snapshot(self) -> np.ndarray:
-        """Audio captured so far WITHOUT stopping the stream (for live preview)."""
-        with self._lock:
-            if not self._frames:
-                return np.zeros(0, dtype="float32")
-            return np.concatenate(list(self._frames), axis=0).flatten()
-
     def current_level(self, window_frames: int = 8) -> float:
         """RMS amplitude of the most recent captured chunks (0.0 if none).
         Cheap; used to drive the live level meter."""
