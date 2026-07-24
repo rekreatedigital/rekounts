@@ -251,8 +251,14 @@ def test_the_clipboard_round_trips_through_real_nspasteboard(backend):
             AppKit.NSPasteboardTypeString)
         assert restored == "rekounts-native-test-α"
     finally:
-        # Leave the runner's pasteboard as we found it.
-        backend.restore_clipboard(original)
+        # Leave the runner's pasteboard as we found it. restore_clipboard is a
+        # no-op on an empty snapshot (nothing to put back), so an empty
+        # pasteboard has to be cleared by hand or our test string lingers.
+        if original:
+            backend.restore_clipboard(original)
+        else:
+            import AppKit
+            AppKit.NSPasteboard.generalPasteboard().clearContents()
 
 
 # --- real CGEvents, created but never posted -------------------------------

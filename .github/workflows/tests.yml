@@ -135,7 +135,7 @@ jobs:
         # the version table is the first thing anyone will want.
         run: |
           pip list | grep -Ei 'pyobjc|pyside|ctranslate2|faster-whisper|numpy' || true
-          python -c "import Quartz, AppKit, AVFoundation, objc; print('pyobjc', objc.__version__)"
+          python -c "import ApplicationServices, AVFoundation, AppKit, Quartz, objc; print('pyobjc', getattr(objc, '__version__', '?'))"
 
       - name: Run tests (macOS, real frameworks)
         env:
