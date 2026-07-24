@@ -163,3 +163,31 @@ def test_insights_surfaces_dictation_and_active_day_counts(hub):
     ins_page.refresh()
     assert ins_page.cards["entries_all"].value.text() == "1"
     assert ins_page.cards["active_days"].value.text() == "1"
+
+
+# ============================================================== sidebar chrome (3)
+def test_clicking_a_nav_item_does_not_park_keyboard_focus_on_it(hub):
+    """The platform draws a dotted focus box inside a nav item that holds
+    keyboard focus — on top of a pill that already shows the selection. Nav is
+    reached by clicking, so click-focus buys nothing and costs that artefact."""
+    from PySide6 import QtCore
+    for i in range(len(hub.pages)):
+        policy = hub._nav_group.button(i).focusPolicy()
+        assert not (policy & QtCore.Qt.ClickFocus), "nav item takes focus on click"
+
+
+def test_nav_items_are_still_reachable_by_keyboard(hub):
+    """Killing the focus box must not strand keyboard users: Tab still lands
+    here, and the theme gives :focus a visible style of its own."""
+    from PySide6 import QtCore
+    for i in range(len(hub.pages)):
+        policy = hub._nav_group.button(i).focusPolicy()
+        assert policy & QtCore.Qt.TabFocus, "nav item is not tab-reachable"
+
+
+def test_the_privacy_tagline_sits_under_the_wordmark_exactly_once(hub):
+    from PySide6 import QtWidgets
+    labels = [w for w in hub.findChildren(QtWidgets.QLabel)
+              if w.text() == "Local · Private"]
+    assert len(labels) == 1, "tagline missing or duplicated"
+    assert labels[0].property("role") == "meta"

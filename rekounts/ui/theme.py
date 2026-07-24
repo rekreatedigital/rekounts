@@ -60,8 +60,14 @@ QFrame#RowSep {{ background: {BORDER}; border: none; max-height: 1px; }}
 QPushButton#NavBtn {{
     text-align: left; padding: 9px 14px; border: none; border-radius: 8px;
     color: {TEXT_2}; background: transparent; font-size: 13px;
+    /* Kills the platform focus rectangle — a dotted box drawn INSIDE the
+       selected item, on top of a highlight that already says "you are here".
+       Keyboard users are not stranded: :focus below gives them the same
+       affordance as the mouse, in the design's own language. */
+    outline: none;
 }}
 QPushButton#NavBtn:hover {{ background: {CARD}; color: {TEXT}; }}
+QPushButton#NavBtn:focus {{ background: {CARD}; color: {TEXT}; outline: none; }}
 QPushButton#NavBtn:checked {{ background: {CARD_HI}; color: {TEXT}; font-weight: 600; }}
 
 QLineEdit {{

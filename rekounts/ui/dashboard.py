@@ -559,8 +559,15 @@ class Dashboard(QtWidgets.QWidget):
         sb.setSpacing(4)
         brand = QtWidgets.QLabel("Rekounts")
         brand.setProperty("role", "brand")
-        brand.setContentsMargins(6, 0, 0, 12)
+        brand.setContentsMargins(6, 0, 0, 0)
         sb.addWidget(brand)
+        # The promise reads as a tagline under the wordmark, where it looks
+        # deliberate. Pinned to the sidebar's bottom edge it read as a stray
+        # status line hanging off the profile.
+        tagline = QtWidgets.QLabel("Local · Private")
+        tagline.setProperty("role", "meta")
+        tagline.setContentsMargins(6, 2, 0, 14)
+        sb.addWidget(tagline)
 
         # Built now (before the pages) so AccountPage can call refresh_profile;
         # added to the sidebar as a footer further down.
@@ -592,6 +599,12 @@ class Dashboard(QtWidgets.QWidget):
             btn = QtWidgets.QPushButton(name)
             btn.setObjectName("NavBtn")
             btn.setCheckable(True)
+            # TabFocus, not StrongFocus: clicking a nav item no longer parks
+            # keyboard focus on it, which is what drew the platform's dotted
+            # focus box inside a pill that already shows the selection. Tab
+            # still reaches these (and :focus in the theme styles them), so
+            # keyboard navigation is intact.
+            btn.setFocusPolicy(QtCore.Qt.TabFocus)
             btn.clicked.connect(lambda _=False, idx=i: self.stack.setCurrentIndex(idx))
             self._nav_group.addButton(btn, i)
             sb.addWidget(btn)
@@ -599,9 +612,6 @@ class Dashboard(QtWidgets.QWidget):
                 btn.setChecked(True)
         sb.addStretch(1)
         sb.addWidget(profile)
-        version = QtWidgets.QLabel("Local · Private")
-        version.setProperty("role", "meta")
-        sb.addWidget(version)
 
         outer.addWidget(sidebar)
         outer.addWidget(self.stack, 1)
