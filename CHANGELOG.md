@@ -7,6 +7,38 @@ The version string lives in one place — `rekounts/__init__.py` — and
 everything else (`pyproject.toml`, the `.exe` file properties) reads it from
 there.
 
+## [Unreleased]
+
+### Settings apply instantly, and anything that can't says so
+
+Changing the language or microphone and dictating straight away could give you
+a dictation that ran on the settings you had just replaced.
+
+- **Language and beam size are now read at the moment you dictate**, not copied
+  into the speech engine when you change them. Nothing can leave them stale —
+  not the fraction of a second the Hub waits to batch up changes, and not a
+  model reload running in the background.
+- **A language change made while a model was loading used to be thrown away**
+  when that model finished — permanently, with nothing to tell you and nothing
+  to undo it. That's gone.
+- **Changing your microphone no longer leaks the old one into your next
+  dictation.** With "catch the first syllable" turned on, the mic is held open
+  continuously, and the half-second of already-captured audio that opens your
+  next dictation came from the microphone you had just switched away from.
+- **Switching between settings no longer pushes the apply further away.** The
+  Hub batches rapid changes into one apply; it was restarting that wait every
+  time you touched something, so working down the page kept deferring it.
+
+Two things genuinely can't be instant: loading a different speech model takes
+a few seconds (measured at ~3s for Small and ~6s for Medium), and a microphone
+change can't be applied to a recording already in progress. Dictation keeps
+working through both — that part was already true and hasn't changed. What's
+new is that **you can now see it**: the pill shows an amber dot and says what
+is still catching up, and the Settings page says so too. Previously the only
+sign was a tray notification, so with notifications turned off a model reload
+was completely invisible — you'd dictate, get the old model's output, and have
+nothing on screen to explain why.
+
 ## [0.3.0] — 2026-07-24
 
 The first public release.

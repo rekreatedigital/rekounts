@@ -25,6 +25,15 @@ The whole on-screen footprint while you dictate is one small monochrome pill:
 | *Idle — barely there* | *Hover — it tells you the hotkey* |
 | ![Recording: cancel, live waveform, finish](docs/img/pill-recording.png) | ![Processing dots](docs/img/pill-processing.png) |
 | *Recording — ✕ · live waveform · ✓* | *Processing — about to type* |
+| ![The idle pill with an amber pending dot](docs/img/pill-pending.png) | ![Recording, with the pending dot still showing](docs/img/pill-recording-pending.png) |
+| *A setting is still catching up* | *…and it stays visible while you dictate* |
+
+Settings apply as you change them. The two that can't — loading a different
+speech model, and changing your microphone mid-recording — say so with that
+amber dot instead of applying silently; hover it and the pill spells out what
+is still catching up:
+
+![The hovered pending pill reading "Loading Medium… dictation still uses Small."](docs/img/pill-pending-hover.png)
 
 See the [privacy page](docs/privacy.md) for exactly what is stored and the only
 moments the app touches the network, and the

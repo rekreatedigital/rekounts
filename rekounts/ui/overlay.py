@@ -529,8 +529,10 @@ class Overlay(QtWidgets.QWidget):
         """
         if not self._pending:
             return
+        # Tucked right into the corner: any further in and it clips the ✓
+        # button's ring on the (taller, wider) recording pill.
         d = _PENDING_DOT_D
-        dot = QtCore.QRectF(r.right() - d - 7, r.top() + 7, d, d)
+        dot = QtCore.QRectF(r.right() - d - 6, r.top() + 6, d, d)
         p.save()
         p.setPen(QtCore.Qt.NoPen)
         p.setBrush(_PENDING)
