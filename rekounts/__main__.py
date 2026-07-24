@@ -426,6 +426,60 @@ def _apply_preroll(recorder, enabled, seconds, is_recording):
     return True
 
 
+def _build_inserter(cfg):
+    """Build the TextInserter the app inserts with, from config.
+
+    One place, because it is built twice (startup and every Save) and the two
+    used to be able to drift. Live typing forces keystroke mode: the streaming
+    increments must not go through the clipboard, and paste mode's whole job is
+    the clipboard.
+    """
+    return TextInserter(
+        mode="keystroke" if cfg.get("live_typing") else cfg.get("insertion_mode"),
+        long_text_via_paste=bool(cfg.get("long_text_via_paste")))
+
+
+def stream_tick(controller):
+    """One live-typing tick: transcribe the partial buffer, type the new words.
+
+    Module-level rather than buried in ``stream_loop`` so the invariant that
+    matters is testable: increments are handed to ``insert(streaming=True)``,
+    which is what keeps a per-tick insertion off the user's clipboard. Without
+    that flag a tick with focus on the desktop — or a tick long enough to trip
+    the long-text escalation — would overwrite whatever the user had copied,
+    every 0.8 seconds, with no notice and no restore.
+
+    Returns the InsertResult, or None when the tick had nothing to do.
+    """
+    from rekounts.audio_utils import normalize_gain
+
+    # Gate on the mode the CURRENT recording was started in, not on the config.
+    # Live-apply keeps controller.live_typing fresh, but a recording already in
+    # flight finishes in the mode it began with (see
+    # AppController.start_recording), and the streamer has to agree with it:
+    # streaming into a recording that will finish via _finish_final types the
+    # text twice.
+    if not controller.live_typing_active:
+        return None
+    if not controller.is_recording():
+        return None
+    snap = controller.preview_snapshot()
+    if snap is None or len(snap) < int(0.5 * 16000):
+        return None
+    # transcribe_stream serializes on the model lock, so the live preview can't
+    # race the warm-up or the final release pass. Read the transcriber/inserter
+    # off the controller so a live model or insertion-mode change is picked up
+    # here too.
+    raw = controller.transcriber.transcribe_stream(normalize_gain(snap))
+    # LiveTyper tracks emitted word count -> emits each word once, no doubling.
+    had_streamed = controller.live_typer._emitted > 0
+    new_words = controller.live_typer.feed(raw)
+    if not new_words:
+        return None
+    return controller.inserter.insert(
+        (" " if had_streamed else "") + new_words, streaming=True)
+
+
 def _show_fatal_dialog(tb: str):
     """Last-resort error surface. Under pythonw there is no console, so a silent
     exception would just make the app 'never start' with no clue. A QMessageBox
@@ -685,9 +739,10 @@ def _run():
         except Exception as e:
             log.warning("pre-roll arm failed (non-fatal): %s", e)
     # Live typing streams words via keystrokes (paste-per-chunk would clobber the
-    # clipboard repeatedly), so force keystroke mode when live typing is on.
-    inserter = TextInserter(
-        mode="keystroke" if cfg.get("live_typing") else cfg.get("insertion_mode"))
+    # clipboard repeatedly), so force keystroke mode when live typing is on. The
+    # increments themselves also go out with streaming=True, which is what
+    # actually enforces the invariant — see stream_tick().
+    inserter = _build_inserter(cfg)
 
     # 2) Now it is safe to import and initialize Qt.
     from PySide6 import QtCore, QtWidgets
@@ -847,33 +902,15 @@ def _run():
 
     def stream_loop():
         import time
-        from rekounts.audio_utils import normalize_gain
         while True:
             time.sleep(0.8)
             try:
-                # Gate on the mode the CURRENT recording was started in, not on
-                # the config. Live-apply keeps controller.live_typing fresh, but
-                # a recording already in flight finishes in the mode it began
-                # with (see AppController.start_recording), and the streamer has
-                # to agree with it: streaming into a recording that will finish
-                # via _finish_final types the text twice.
-                if not controller.live_typing_active:
-                    continue
-                if not controller.is_recording():
-                    continue
-                snap = controller.preview_snapshot()
-                if snap is None or len(snap) < int(0.5 * 16000):
-                    continue
-                # transcribe_stream serializes on the model lock, so the live
-                # preview can't race the warm-up or the final release pass. Read
-                # the transcriber/inserter off the controller so a live model or
-                # insertion-mode change is picked up here too.
-                raw = controller.transcriber.transcribe_stream(normalize_gain(snap))
-                # LiveTyper tracks emitted word count -> emits each word once, no doubling.
-                had_streamed = controller.live_typer._emitted > 0
-                new_words = controller.live_typer.feed(raw)
-                if new_words:
-                    controller.inserter.insert((" " if had_streamed else "") + new_words)
+                outcome = stream_tick(controller)
+                if outcome is not None and outcome not in ("typed", "skipped"):
+                    # Not a notice: an increment that missed is re-sent as part
+                    # of the final transcript a moment later, and nagging every
+                    # 0.8s would be worse than saying nothing.
+                    log.debug("live-typing increment not delivered (%s)", outcome)
             except Exception:
                 pass  # streaming is best-effort; final release pass still runs
 
@@ -904,8 +941,7 @@ def _run():
         # Text pipeline: cheap to rebuild in place (build_cleaner re-attaches
         # the dictionary replacements provider to the new instance).
         controller.cleaner = build_cleaner()
-        controller.inserter = TextInserter(
-            mode="keystroke" if cfg.get("live_typing") else cfg.get("insertion_mode"))
+        controller.inserter = _build_inserter(cfg)
         controller.live_typing = cfg.get("live_typing")
         controller.filter_hallucinations = cfg.get("filter_hallucinations")
         # Reschedules the running cap timer (and its warning) from elapsed time,

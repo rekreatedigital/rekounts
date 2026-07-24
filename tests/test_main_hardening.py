@@ -422,3 +422,114 @@ def test_fallback_never_retries_the_model_that_just_failed():
         "base", "base",
         is_installed=lambda n: True, known=["base", "medium"])
     assert picked == "medium"
+
+
+# --------------------------------------------------------------------------
+# Live-typing stream tick
+#
+# The per-tick insertion runs every ~0.8s while the user speaks. It MUST be
+# marked streaming=True: without that flag an undeliverable increment gets
+# parked on the clipboard (silently overwriting whatever the user had copied,
+# once per tick) and a long one escalates to Ctrl+V, contradicting the reason
+# live typing forces keystroke mode in the first place.
+# --------------------------------------------------------------------------
+class _RecordingInserter:
+    def __init__(self, outcome="typed"):
+        self.calls = []
+        self.outcome = outcome
+
+    def insert(self, text, target=None, *, streaming=False):
+        self.calls.append((text, streaming))
+        return self.outcome
+
+
+class _FakeLiveTyper:
+    def __init__(self, words, emitted=0):
+        self._emitted = emitted
+        self._words = words
+
+    def feed(self, raw):
+        return self._words
+
+
+class _FakeStreamController:
+    def __init__(self, words="hello there", emitted=0, recording=True,
+                 active=True, snapshot=None):
+        import numpy as np
+        self.live_typing_active = active
+        self._recording = recording
+        self.inserter = _RecordingInserter()
+        self.live_typer = _FakeLiveTyper(words, emitted)
+        self._snapshot = (np.zeros(16000, dtype="float32")
+                          if snapshot is None else snapshot)
+
+        class _T:
+            def transcribe_stream(self, audio):
+                return "hello there"
+
+        self.transcriber = _T()
+
+    def is_recording(self):
+        return self._recording
+
+    def preview_snapshot(self):
+        return self._snapshot
+
+
+def test_stream_tick_marks_the_insert_as_a_streaming_increment():
+    c = _FakeStreamController()
+    assert app_main.stream_tick(c) == "typed"
+    assert c.inserter.calls == [("hello there", True)]
+
+
+def test_stream_tick_prefixes_a_space_once_words_have_been_streamed():
+    c = _FakeStreamController(emitted=3)
+    app_main.stream_tick(c)
+    assert c.inserter.calls == [(" hello there", True)]
+
+
+def test_stream_tick_is_a_noop_when_live_typing_is_not_active():
+    c = _FakeStreamController(active=False)
+    assert app_main.stream_tick(c) is None
+    assert c.inserter.calls == []
+
+
+def test_stream_tick_is_a_noop_when_not_recording():
+    c = _FakeStreamController(recording=False)
+    assert app_main.stream_tick(c) is None
+    assert c.inserter.calls == []
+
+
+def test_stream_tick_is_a_noop_without_enough_audio():
+    import numpy as np
+    c = _FakeStreamController(snapshot=np.zeros(100, dtype="float32"))
+    assert app_main.stream_tick(c) is None
+    assert c.inserter.calls == []
+
+
+def test_stream_tick_is_a_noop_when_no_new_words_were_emitted():
+    c = _FakeStreamController(words="")
+    assert app_main.stream_tick(c) is None
+    assert c.inserter.calls == []
+
+
+# --------------------------------------------------------------------------
+# Inserter construction reads the documented config keys
+# --------------------------------------------------------------------------
+def test_inserter_honours_the_long_text_via_paste_config_key():
+    from rekounts.config import DEFAULTS
+
+    assert DEFAULTS["long_text_via_paste"] is True
+    built = app_main._build_inserter({"live_typing": False,
+                                      "insertion_mode": "keystroke",
+                                      "long_text_via_paste": False})
+    assert built.long_text_via_paste is False
+    assert built.mode == "keystroke"
+
+
+def test_inserter_forces_keystroke_mode_while_live_typing_is_on():
+    built = app_main._build_inserter({"live_typing": True,
+                                      "insertion_mode": "paste",
+                                      "long_text_via_paste": True})
+    assert built.mode == "keystroke"
+    assert built.long_text_via_paste is True
