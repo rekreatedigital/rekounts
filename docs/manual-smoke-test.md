@@ -81,11 +81,26 @@ applies on its own within a moment. Throughout this section the app must
 - [ ] **Insert text by** = keystrokes, dictate → text is typed
       character-by-character and your clipboard is untouched.
 
+## Settings — Audio cues
+
+All of these live in **Settings → Audio**, under the microphone.
+
+- [ ] **Sound effects** off → dictation start/stop cues go silent immediately
+      (no restart); on → they come back.
+- [ ] With sound effects **off**, the **Cue volume** dropdown is greyed out and
+      says so, rather than looking live while changing nothing.
+- [ ] **Cue volume** = Loud → dictate → the very next cue is louder. Set it to
+      Soft → the next cue is quieter. No restart at any point.
+- [ ] By ear: the start cue is a single short, low toot — noticeable if you
+      listen for it, easy to ignore if you don't. The stop cue is the same but
+      lower. Neither should make you flinch on headphones.
+- [ ] The error cue (unplug the mic mid-dictation, or force a failure) is a
+      two-note fall — clearly not the start or stop cue.
+
 ## Settings — System & Privacy switches
 
 - [ ] **Show dictation pill** off → the pill disappears immediately; on → it
       comes back, in the right position.
-- [ ] **Sound effects** off → dictation start/stop cues go silent; on → back.
 - [ ] **Tray notifications** off → change a setting → no "Settings applied."
       toast; on → toasts return.
 - [ ] **Launch at login** on → `HKCU\Software\Microsoft\Windows\
