@@ -26,7 +26,11 @@ DANGER_BORDER = "#6e4a4a"
 PAGE_MARGINS = (32, 28, 32, 24)   # left, top, right, bottom for every page
 ROW_H_PAD = 16
 ROW_V_PAD = 12
-CONTROL_W = 208                   # every combo/field in a settings row
+# Every combo/field in a settings row. Wide enough for the longest option text
+# the app offers ("Small — balanced (recommended)" needs ~184px of the ~CONTROL_W
+# minus 44px of frame and arrow) — a QComboBox clips its label rather than
+# eliding it, so a narrow column silently cuts words in half.
+CONTROL_W = 240
 
 STYLE = f"""
 QWidget#DashRoot {{ background: {BG}; color: {TEXT}; font-size: 13px; }}
