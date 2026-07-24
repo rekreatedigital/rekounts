@@ -113,3 +113,16 @@ def test_default_command_args_prefers_launcher():
     # with a real interpreter/executable.
     assert args
     assert args[0]
+
+
+def test_default_command_is_shlex_quoted_off_windows(monkeypatch):
+    """The posix string form must round-trip through LaunchAgentBackend's
+    shlex parsing even with spaces in the path (test_startup.py pins the
+    Windows double-quote shape; this pins the mac one)."""
+    monkeypatch.setattr(startup.sys, "platform", "darwin")
+    monkeypatch.setattr(startup.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(startup.sys, "executable",
+                        "/Applications/Rekounts Dev/python3", raising=False)
+    cmd = startup.default_command()
+    import shlex
+    assert shlex.split(cmd) == ["/Applications/Rekounts Dev/python3"]
