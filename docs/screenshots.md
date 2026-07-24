@@ -1,48 +1,64 @@
 # Screenshots for the README
 
-## The pill (automated — never screenshot it by hand)
+Both sets are generated. **Never screenshot either one by hand** — a manual
+capture drifts from the app the moment the UI changes, and a hand-taken Hub shot
+publishes whatever real dictations, microphone name and display name happened to
+be on screen.
+
+## The pill
 
 ```bat
 .venv\Scripts\python.exe tools\capture_pill_shots.py
 ```
 
-renders the real overlay widget offscreen and rewrites the four
-`docs/img/pill-*.png` tiles. Rerun it after any change to
-`rekounts/ui/overlay.py` so the README never drifts from the app.
+renders the real overlay widget and rewrites the four `docs/img/pill-*.png`
+tiles. Rerun it after any change to `rekounts/ui/overlay.py`.
 
-## The Hub (manual — takes about two minutes)
+## The Hub
 
-The Hub needs the running app (single-instance mutex, real window chrome), so
-this part is by hand:
+```bat
+.venv\Scripts\python.exe tools\capture_hub_shots.py
+```
 
-1. **Have something presentable to show.** The Dictation page will be
-   published exactly as captured, so either dictate three or four innocuous
-   sentences ("Send the roadmap draft to the team before standup." style), or
-   temporarily clear anything personal. Check the **Account** display name and
-   the visible **microphone name** too — they end up in the shot.
-2. Launch the app (`run.bat` or `Rekounts.exe`), tray → **Open Dashboard**.
-3. Size the window to roughly **1100 × 720** — big enough to read, small
-   enough that GitHub doesn't shrink the text into mush.
-4. Capture the window with **Win+Shift+S** (Snipping Tool → Window mode) and
-   save as PNG:
-   - the **Dictation** page → `docs/img/hub-dictation.png`
-   - the **Settings** page → `docs/img/hub-settings.png`
-   - optionally **Insights** (after a few days of use it looks great) →
-     `docs/img/hub-insights.png`
-5. Keep each file under ~400 KB (plain PNG at 100% scale is usually fine).
-6. In `README.md`, replace the `TODO(maintainer)` comment in **The Hub**
-   section with:
+rewrites the four `docs/img/hub-*.png` images — Dictation, Insights, Dictionary,
+Settings. Rerun it after any change to `rekounts/ui/dashboard.py`,
+`rekounts/ui/settings_page.py` or `rekounts/ui/theme.py`.
 
-   ```html
-   <p align="center">
-     <img src="docs/img/hub-dictation.png" width="720"
-          alt="The Hub's Dictation page — searchable local history" />
-   </p>
-   <p align="center">
-     <img src="docs/img/hub-settings.png" width="720"
-          alt="Settings — a page inside the Hub; every change applies instantly" />
-   </p>
-   ```
+It takes a few seconds, nothing appears on screen, and it is safe to run while
+the app itself is running: it constructs the `Dashboard` widget directly, so it
+never takes the single-instance mutex and never installs the keyboard hook.
 
-7. Last look before committing: zoom into each PNG once, read every visible
-   string, and confirm there is nothing in it you would not put on a billboard.
+**What it does.** Before importing anything from `rekounts`, it repoints
+`APPDATA` at a fresh temp folder — the seam `tests/conftest.py` uses — so the
+config and history it builds are throwaway and your real `%APPDATA%\Rekounts`
+is neither read nor written. Into that sandbox it seeds three weeks of the
+sample dictations from `scripts/seed_history.py` (fixed RNG seed, so reruns
+don't reshuffle the shots) plus a handful of dictionary words, renders each page
+at 2x, rounds the corners, and deletes the sandbox on the way out.
+
+Two things are substituted so the published images can't leak the machine they
+were captured on:
+
+- the microphone dropdown gets two generic placeholder devices instead of the
+  real device list;
+- **Settings → Where your data lives** shows the generic
+  `C:\Users\you\AppData\Roaming\Rekounts` instead of the sandbox temp path.
+
+Everything else on screen is the app rendering its own state.
+
+**Why not show the window and grab it?** Same two lessons as the pill tool:
+
+- render with `QWidget.render()` rather than `show()` + `grab()`, so nothing
+  flashes on screen and no window manager gets involved;
+- use the **native** Qt platform. The `offscreen` platform has no font database
+  and renders every glyph as a tofu box.
+
+### If you change the shots
+
+`WIN_W`/`WIN_H` at the top of the tool set the window size (900 × 600 — near the
+Hub's own 880 × 620 default) and `SCALE` the device pixel ratio. Keep each PNG
+under a few hundred KB; at 2x the dark UI compresses to about 60–100 KB.
+
+Afterwards, **look at every image before committing** — open each one, read
+every visible string, and confirm there is nothing in it you would not put on a
+billboard. The README embeds all four at `width="820"`.
