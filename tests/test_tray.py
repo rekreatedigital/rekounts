@@ -213,6 +213,47 @@ def test_exactly_one_microphone_entry_is_checked(tray, config):
     assert len(_checked(tray._mic_menu)) == 1
 
 
+# --------------------------------------------------------------- feedback
+def _action(menu, label):
+    return next(a for a in menu.actions() if a.text() == label)
+
+
+def test_send_feedback_is_in_the_menu(tray):
+    assert "Send Feedback…" in _labels(tray.menu)
+
+
+def test_send_feedback_calls_the_wired_handler(app, config):
+    clicks = []
+    t = TrayApp(app, on_open_settings=lambda: None, on_quit=lambda: None,
+                config=config, on_send_feedback=lambda: clicks.append(1))
+    try:
+        _action(t.menu, "Send Feedback…").trigger()
+        assert clicks == [1]
+    finally:
+        t.tray.hide()
+
+
+def test_the_feedback_handler_never_receives_qts_checked_flag(app, config):
+    """QAction.triggered passes a bool; a handler that took it as an argument
+    would raise the moment someone clicked. Same trap the update check hit."""
+    seen = []
+    t = TrayApp(app, on_open_settings=lambda: None, on_quit=lambda: None,
+                config=config, on_send_feedback=lambda *a: seen.append(a))
+    try:
+        _action(t.menu, "Send Feedback…").trigger()
+        assert seen == [()]
+    finally:
+        t.tray.hide()
+
+
+def test_the_original_three_argument_constructor_still_works(app):
+    t = TrayApp(app, lambda: None, lambda: None)
+    try:
+        assert "Send Feedback…" in _labels(t.menu)
+    finally:
+        t.tray.hide()
+
+
 def test_unplugged_configured_mic_leaves_nothing_checked(tray, config):
     config.set("microphone", "Microphone (Unplugged)")
     tray._mic_menu.aboutToShow.emit()

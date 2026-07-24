@@ -15,7 +15,7 @@ import logging
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from rekounts import sounds
+from rekounts import paths, sounds
 from rekounts.config import default_config_path
 from rekounts.device_utils import classify_level, resolve_input_device
 from rekounts.hotkey_manager import DEFAULT_HOTKEY, is_valid_hotkey
@@ -44,11 +44,16 @@ def _nearest_volume(value):
     return min(sounds.VOLUME_LEVELS, key=lambda level: abs(level - value))
 
 
+# One count of the network moments, published here, in docs/privacy.md and in
+# SECURITY.md. All three have to say the same number — keep them in step.
 NETWORK_STATEMENT = (
-    "Rekounts runs entirely on this machine. It reaches the network exactly "
-    "twice: once to download the speech model the first time you use it, and "
-    "when you click “Check for Updates” in the tray menu. Your audio and your "
-    "text never leave this computer."
+    "Rekounts runs entirely on this machine. Four moments involve the network. "
+    "Rekounts itself makes two requests: it downloads the speech model the "
+    "first time you use it, and it asks GitHub for a newer release when you "
+    "click “Check for Updates” (or once per launch, if you switched that on). "
+    "“Help” and “Send Feedback…” make no request at all — they open a page in "
+    "your browser or a message in your mail client, already filled in and not "
+    "yet sent. Your audio and your text never leave this computer."
 )
 
 
@@ -429,11 +434,14 @@ class SettingsPage(QtWidgets.QWidget):
     _status_changed = QtCore.Signal(str)
 
     def __init__(self, config, history=None, on_saved=None, startup_setter=None,
-                 startup_getter=None):
+                 startup_getter=None, on_send_feedback=None):
         super().__init__()
         self.config = config
         self.history = history
         self._on_saved = on_saved or (lambda: None)
+        # Optional, like the tray's: the default opens the review dialog, and a
+        # caller (or a test) can substitute its own handler.
+        self._on_send_feedback = on_send_feedback or self._open_feedback_dialog
         self._startup_setter = startup_setter or _default_startup_setter
         # Reads the REAL launch-at-login state (production wires the registry
         # query in via the Dashboard). Defaults to the stored flag so tests and
@@ -907,6 +915,24 @@ class SettingsPage(QtWidgets.QWidget):
         open_btn = self._ghost("Open folder", lambda: self._open_folder(data_dir))
         sec.add(SettingsRow("Where your data lives", open_btn, data_dir))
 
+        # Someone asked for their log — in an issue, or in a reply to their own
+        # feedback — needs to be able to find it without being walked through
+        # %APPDATA% over email.
+        log_dir = str(paths.logs_dir())
+        log_btn = self._ghost("Open folder", self._open_log_folder)
+        sec.add(SettingsRow(
+            "Diagnostic log", log_btn,
+            "Startup, model loading and errors — never your transcripts. "
+            f"{log_dir}"))
+
+        # Reachable from the tray menu too; both land in the same dialog, which
+        # shows you everything before anything moves.
+        feedback_btn = self._ghost("Send feedback…", self._send_feedback)
+        sec.add(SettingsRow(
+            "Feedback and bug reports", feedback_btn,
+            "Opens a prefilled GitHub issue or an email, in your browser or "
+            "mail client. Rekounts sends nothing itself."))
+
         self._body.addWidget(sec)
 
         note = QtWidgets.QLabel(NETWORK_STATEMENT)
@@ -940,6 +966,31 @@ class SettingsPage(QtWidgets.QWidget):
         if ok == QtWidgets.QMessageBox.Yes:
             self.history.clear_all()
             self.clear_row.set_hint(self._history_count_hint())
+
+    def _open_log_folder(self):
+        """Open the log folder, creating it first if logging never got that far.
+
+        setup_logging() degrades to memory-only on a read-only %APPDATA%, which
+        is exactly the state someone would be reporting — and an Open folder
+        button that does nothing at all is the worst possible answer there.
+        """
+        log_dir = paths.logs_dir()
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            log.warning("could not create the log folder: %s", e)
+        self._open_folder(str(log_dir))
+
+    def _send_feedback(self):
+        """Never let a failure here escape into Qt — this is a help button."""
+        try:
+            self._on_send_feedback()
+        except Exception:
+            log.exception("could not open the feedback dialog")
+
+    def _open_feedback_dialog(self):
+        from rekounts.ui.feedback_dialog import show_feedback
+        show_feedback(self.config, parent=self)
 
     @staticmethod
     def _open_folder(path):

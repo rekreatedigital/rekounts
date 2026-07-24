@@ -497,3 +497,58 @@ def test_the_scratchpad_ships_on_by_default():
     costs them nothing and saves a hunt through Settings."""
     from rekounts.config import DEFAULTS
     assert DEFAULTS["scratchpad_enabled"] is True
+
+
+# --------------------------------------------------- feedback & the log folder
+def _row_titles(page):
+    return [label.text()
+            for label in page.findChildren(QtWidgets.QLabel)
+            if label.property("role") == "row-title"]
+
+
+def _button(page, text):
+    return next(b for b in page.findChildren(QtWidgets.QPushButton)
+                if b.text() == text)
+
+
+def test_data_and_privacy_offers_feedback_and_the_log_folder(page):
+    titles = _row_titles(page)
+    assert "Feedback and bug reports" in titles
+    assert "Diagnostic log" in titles
+
+
+def test_the_feedback_button_calls_the_wired_handler(app, cfg, history,
+                                                     monkeypatch):
+    monkeypatch.setattr("rekounts.ui.settings_page.microphone_options",
+                        lambda: list(FAKE_MICS))
+    clicks = []
+    p = SettingsPage(cfg, history, on_send_feedback=lambda: clicks.append(1))
+    _button(p, "Send feedback…").click()
+    assert clicks == [1]
+    p.deleteLater()
+
+
+def test_a_failing_feedback_handler_does_not_escape_into_qt(app, cfg, history,
+                                                            monkeypatch):
+    monkeypatch.setattr("rekounts.ui.settings_page.microphone_options",
+                        lambda: list(FAKE_MICS))
+
+    def boom():
+        raise RuntimeError("no dialog today")
+
+    p = SettingsPage(cfg, history, on_send_feedback=boom)
+    _button(p, "Send feedback…").click()          # must not raise
+    p.deleteLater()
+
+
+def test_opening_the_log_folder_creates_it_if_logging_never_could(page,
+                                                                  monkeypatch):
+    from rekounts import paths
+    opened = []
+    monkeypatch.setattr(type(page), "_open_folder",
+                        staticmethod(opened.append))
+
+    page._open_log_folder()
+
+    assert opened == [str(paths.logs_dir())]
+    assert paths.logs_dir().is_dir()
