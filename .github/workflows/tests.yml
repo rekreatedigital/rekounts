@@ -39,10 +39,16 @@ jobs:
   pytest-posix:
     # The unit suite is platform-neutral by design: every platform layer
     # (registry, winsound, Win32 clipboard, LaunchAgents, afplay,
-    # Quartz/NSPasteboard) is faked or skipped, and the Qt tests run
-    # offscreen. The macOS port's code paths are all exercised here via those
-    # fakes, so macos-latest green means the mac logic itself is tested —
-    # only TCC/CGEvent/NSPanel behavior needs real hardware (MACOS-TESTING.md).
+    # Quartz/NSPasteboard) is faked or skipped, and the Qt tests run offscreen.
+    #
+    # Read what this leg does and does NOT prove. It installs
+    # requirements-test.txt, which contains **no pyobjc**, so on macos-latest it
+    # exercises the mac port's POLICY against fakes and has never executed a
+    # single real Quartz/AppKit/AVFoundation call. Green here therefore says
+    # "the mac logic is consistent", not "the mac logic works" — the frameworks
+    # could be missing a symbol we name and this leg would not notice.
+    #
+    # The pytest-macos-runtime leg below is the one that closes that gap.
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -79,6 +85,65 @@ jobs:
         # No X involved on macOS: pynput's darwin backend imports without any
         # special permissions (the tests never start a real listener).
         if: runner.os == 'macOS'
+        run: python -m pytest -q
+
+  pytest-macos-runtime:
+    # The leg that actually runs macOS code on macOS.
+    #
+    # It installs the FULL requirements.txt — the runtime set, pyobjc included —
+    # rather than requirements-test.txt. That is deliberately the expensive
+    # choice (~800 MB, a few minutes) and it buys two things no cheaper leg can:
+    #
+    #   1. It proves the mac runtime dependency set RESOLVES AND INSTALLS on an
+    #      Apple-silicon runner at all — PySide6, ctranslate2, onnxruntime, av
+    #      and the four pyobjc frameworks together. Until this leg existed,
+    #      "can a Mac user even `pip install -r requirements.txt`?" was an open
+    #      question with a plausible "no".
+    #   2. It runs tests/test_macos_native.py, which imports Quartz, AppKit,
+    #      ApplicationServices and AVFoundation for real, builds the real
+    #      _MacBackend, round-trips a real NSPasteboard, and creates real
+    #      CGEvents (never posting them — that would type into the runner).
+    #
+    # REKOUNTS_REQUIRE_MACOS_NATIVE=1 is the load-bearing part: it turns
+    # "pyobjc is missing" from a skip into a hard failure. Without it a broken
+    # install would skip that whole file and report green, which is precisely
+    # the trap the pytest-posix macOS leg was in.
+    #
+    # What it still does NOT prove: anything behind TCC consent. A runner has no
+    # Input Monitoring or Accessibility grant, so posted events would go
+    # nowhere and no test asks them to. Those checks need a physical Mac —
+    # MACOS-TESTING.md, and docs/macos-one-hour.md for the order to do them in.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          # The runtime set is what this leg installs, so it is what keys the
+          # cache — see the same note on the legs above.
+          cache-dependency-path: requirements.txt
+
+      - name: Install the full runtime dependency set
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Show what the pyobjc frameworks resolved to
+        # Printed, not asserted: when this leg goes red on a dependency bump,
+        # the version table is the first thing anyone will want.
+        run: |
+          pip list | grep -Ei 'pyobjc|pyside|ctranslate2|faster-whisper|numpy' || true
+          python -c "import Quartz, AppKit, AVFoundation, objc; print('pyobjc', objc.__version__)"
+
+      - name: Run tests (macOS, real frameworks)
+        env:
+          # Skipping tests/test_macos_native.py must not be a way to pass.
+          REKOUNTS_REQUIRE_MACOS_NATIVE: "1"
+          # The Qt widget tests stay headless; the runner's window server is
+          # not something the unit suite should depend on.
+          QT_QPA_PLATFORM: offscreen
         run: python -m pytest -q
 
   lint:
