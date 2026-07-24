@@ -322,10 +322,23 @@ class AppController:
         outcome = self.inserter.insert(cleaned)
         inserted = _insertion_succeeded(outcome)
         if not inserted:
-            self.on_notice("Saved to history — no text field was focused.")
+            self.on_notice(self._undelivered_notice())
         # Fire AFTER insertion regardless of outcome: the history is the safety
         # net when the cursor wasn't in a text field.
         self.on_result(raw, cleaned, duration_s, inserted)
+
+    def _undelivered_notice(self) -> str:
+        """Wording for a dictation that never reached a text field.
+
+        The inserter parks undeliverable text on the clipboard, so when that
+        worked the honest message is "it's one paste away", not just "it's in
+        history". getattr keeps this working with the older inserter interface
+        and with test doubles that don't set the flag.
+        """
+        if getattr(self.inserter, "last_parked_on_clipboard", False):
+            return ("No text field was focused — copied to your clipboard "
+                    "and saved to History.")
+        return "Saved to history — no text field was focused."
 
     def _finish_live(self, raw, duration_s):
         had_streamed = self.live_typer._emitted > 0
@@ -335,7 +348,7 @@ class AppController:
             outcome = self.inserter.insert((" " if had_streamed else "") + tail)
             inserted = _insertion_succeeded(outcome)
             if not inserted:
-                self.on_notice("Saved to history — no text field was focused.")
+                self.on_notice(self._undelivered_notice())
         elif not had_streamed:
             self.on_notice("No speech detected — check your microphone selection/volume.")
             return
