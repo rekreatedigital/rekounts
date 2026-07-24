@@ -16,8 +16,9 @@ QtCore = pytest.importorskip("PySide6.QtCore")
 QtGui = pytest.importorskip("PySide6.QtGui")
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 
+from rekounts import sounds  # noqa: E402  (after importorskip)
 from rekounts.ui.settings_page import (  # noqa: E402  (after importorskip)
-    SettingsPage, ToggleSwitch, _compose,
+    SettingsPage, ToggleSwitch, _compose, _nearest_volume,
     _normalize_mic_entries, _qt_event_to_token, microphone_options,
     pretty_hotkey)
 
@@ -123,6 +124,81 @@ def test_unwritable_config_does_not_schedule_an_apply(page, monkeypatch):
     page.sound_effects.setChecked(False)
     assert not page._apply_timer.isActive()
     assert page.applies == []
+
+
+# =============================================================== sound effects
+def test_sound_controls_live_in_the_audio_section(page):
+    """Discoverability, not decoration: someone hunting for the off switch looks
+    under Audio. It used to sit under System, three sections further down."""
+    audio = next(w for w in page.findChildren(QtWidgets.QLabel)
+                 if w.text() == "AUDIO")
+    card = audio.parent()
+    assert page.sound_effects in card.findChildren(ToggleSwitch)
+    assert page.sound_volume in card.findChildren(QtWidgets.QComboBox)
+
+
+def test_volume_persists_immediately_and_schedules_apply(page, cfg, tmp_path):
+    page.sound_volume.setCurrentIndex(
+        page.sound_volume.findData(sounds.VOLUME_LOUD))
+    assert cfg.get("sound_volume") == sounds.VOLUME_LOUD
+    assert Config(path=tmp_path / "config.json").get("sound_volume") == \
+        sounds.VOLUME_LOUD
+    assert page._apply_timer.isActive()
+
+
+def test_volume_offers_exactly_the_three_levels(page):
+    data = [page.sound_volume.itemData(i)
+            for i in range(page.sound_volume.count())]
+    assert data == list(sounds.VOLUME_LEVELS)
+
+
+def test_volume_defaults_to_normal(page):
+    assert page.sound_volume.currentData() == sounds.VOLUME_NORMAL
+
+
+def test_volume_greys_out_while_sounds_are_off(page):
+    assert page.sound_volume.isEnabled() is True
+    page.sound_effects.setChecked(False)
+    assert page.sound_volume.isEnabled() is False
+    assert "on to change" in page.volume_row.hint.text()
+    page.sound_effects.setChecked(True)
+    assert page.sound_volume.isEnabled() is True
+
+
+def test_volume_starts_greyed_out_when_sounds_are_already_off(
+        app, cfg, history, monkeypatch):
+    """The disabled state has to be right on construction, not only after a
+    toggle — a user who turned sounds off last week reopens to a live-looking
+    control otherwise."""
+    monkeypatch.setattr("rekounts.ui.settings_page.microphone_options",
+                        lambda: list(FAKE_MICS))
+    cfg.set("sound_effects", False)
+    p = SettingsPage(cfg, history)
+    assert p.sound_volume.isEnabled() is False
+    p.deleteLater()
+
+
+@pytest.mark.parametrize("stored,expected", [
+    (0.05, sounds.VOLUME_SOFT),
+    (0.09, sounds.VOLUME_NORMAL),
+    (0.18, sounds.VOLUME_LOUD),
+    (0.15, sounds.VOLUME_LOUD),      # hand-edited: snaps to the nearest level
+    (0.0, sounds.VOLUME_SOFT),
+    (None, sounds.VOLUME_NORMAL),    # key absent
+    ("loud", sounds.VOLUME_NORMAL),  # junk
+])
+def test_nearest_volume_never_misreports_what_is_playing(stored, expected):
+    assert _nearest_volume(stored) == expected
+
+
+def test_hand_edited_volume_is_shown_as_the_nearest_level(
+        app, cfg, history, monkeypatch):
+    monkeypatch.setattr("rekounts.ui.settings_page.microphone_options",
+                        lambda: list(FAKE_MICS))
+    cfg.set("sound_volume", 0.16)
+    p = SettingsPage(cfg, history)
+    assert p.sound_volume.currentData() == sounds.VOLUME_LOUD
+    p.deleteLater()
 
 
 # =============================================================== hotkey (wave 1)
