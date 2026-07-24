@@ -15,6 +15,7 @@ import logging
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from rekounts import sounds
 from rekounts.config import default_config_path
 from rekounts.device_utils import classify_level, resolve_input_device
 from rekounts.hotkey_manager import DEFAULT_HOTKEY, is_valid_hotkey
@@ -28,6 +29,20 @@ _LEVEL_MESSAGES = {
     "quiet": "Very quiet — boosted, may still work.",
     "silent": "Silent — wrong microphone, or muted.",
 }
+
+def _nearest_volume(value):
+    """Snap a stored cue volume to the closest level the dropdown offers.
+
+    config.json holds the raw amplitude, so it can be hand-edited to anything.
+    Rather than silently showing "Soft" for a hand-set 0.15, pick the entry that
+    is actually closest — the control then never misreports what is playing.
+    """
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return sounds.VOLUME_NORMAL
+    return min(sounds.VOLUME_LEVELS, key=lambda level: abs(level - value))
+
 
 NETWORK_STATEMENT = (
     "Rekounts runs entirely on this machine. It reaches the network exactly "
@@ -664,7 +679,36 @@ class SettingsPage(QtWidgets.QWidget):
             "System default follows whatever Windows is using."))
         self.test_done.connect(self._show_test_result)
 
+        # Sound effects live HERE, not under System where they used to sit —
+        # "Audio" is where someone hunting for the off switch actually looks,
+        # and burying it three sections down is most of why it read as missing.
+        self.sound_effects = self._switch(
+            "sound_effects", on_change=self._sync_volume_availability)
+        sec.add(SettingsRow(
+            "Sound effects", self.sound_effects,
+            "A short, quiet tone when dictation starts and stops. Off means "
+            "completely silent."))
+
+        self.sound_volume = self._combo(
+            [("Soft", sounds.VOLUME_SOFT),
+             ("Normal", sounds.VOLUME_NORMAL),
+             ("Loud", sounds.VOLUME_LOUD)],
+            _nearest_volume(self.config.get("sound_volume")),
+            lambda v: self._persist("sound_volume", float(v)))
+        self.volume_row = sec.add(SettingsRow(
+            "Cue volume", self.sound_volume,
+            "Applies to the next cue — no restart."))
+        self._sync_volume_availability(bool(self.config.get("sound_effects")))
+
         self._body.addWidget(sec)
+
+    def _sync_volume_availability(self, sounds_on):
+        """Volume is meaningless while the cues are off — grey it out and say so
+        rather than leaving a live-looking control that changes nothing."""
+        self.sound_volume.setEnabled(bool(sounds_on))
+        self.volume_row.set_hint(
+            "Applies to the next cue — no restart." if sounds_on
+            else "Turn sound effects on to change the volume.")
 
     def _populate_mics(self, selected):
         """(Re)fill the dropdown, keeping the current selection if it still exists."""
@@ -798,10 +842,6 @@ class SettingsPage(QtWidgets.QWidget):
         self.startup_row = sec.add(SettingsRow(
             "Launch at login", self.launch_startup,
             "Start Rekounts automatically when you sign in to Windows."))
-
-        self.sound_effects = self._switch("sound_effects")
-        sec.add(SettingsRow("Sound effects", self.sound_effects,
-                            "Subtle cues when dictation starts and stops."))
 
         self.show_pill = self._switch("show_pill")
         sec.add(SettingsRow("Show dictation pill", self.show_pill,

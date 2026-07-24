@@ -89,7 +89,18 @@ DEFAULTS = {
     # Subtle start/stop/error audio cues (see rekounts/sounds.py). Generated
     # tones via stdlib winsound — nothing bundled, nothing downloaded. Silently
     # no-ops where no audio backend is available.
+    #
+    # ON by default deliberately: the start cue is the only feedback that the
+    # hold-to-talk gesture actually took while your eyes are on the text field,
+    # and a missed start costs a whole re-dictation. The cues are quiet enough
+    # to live with (fix/minimal-sounds), and one switch in the Hub's Audio
+    # section turns them off entirely for anyone who wants silence.
     "sound_effects": True,
+    # Cue volume as peak amplitude, 0..1. The Hub offers three levels
+    # (sounds.VOLUME_SOFT / _NORMAL / _LOUD) and snaps the dropdown to the
+    # nearest, but any value in between is honored if you hand-edit it here.
+    # Read live on every cue — no restart, no rebuild.
+    "sound_volume": 0.09,
     # Tray balloon notifications ("Settings applied.", mic changes, errors).
     # Persisted by the Hub; TrayApp.notify() is the intended consumer.
     "show_notifications": True,

@@ -39,6 +39,33 @@ sign was a tray notification, so with notifications turned off a model reload
 was completely invisible — you'd dictate, get the old model's output, and have
 nothing on screen to explain why.
 
+### The start/stop cues are much quieter — and easy to switch off
+
+The cues that shipped in 0.3.0 were too loud and too noticeable. They are now
+a **toot**: shorter, lower, and about **half as loud**.
+
+- **Lower, not just quieter.** The old cues sat at 660–880 Hz, right where the
+  ear is most sensitive, so they cut through everything. The new ones sit at
+  350–470 Hz and are softer on top of that. They do not go lower still on
+  purpose: laptop speakers roll off below ~400 Hz, and a cue you cannot hear on
+  a laptop is not an improvement.
+- **Start and stop are each a single note now**, told apart by pitch — the stop
+  tone is lower, which reads as "done" without a second note. The error cue
+  keeps its two-note fall, because that one *should* be unmistakable.
+- **New: Cue volume** — Soft / Normal / Loud, in Settings → Audio. Takes effect
+  on the very next cue, no restart. Even **Loud** is quieter than the single
+  fixed volume 0.3.0 shipped.
+- **The off switch is easier to find.** *Sound effects* moved from
+  Settings → System to **Settings → Audio**, next to the microphone and the new
+  volume — which is where people were looking for it. Off means silent; the
+  volume greys out so it can't look live when it isn't.
+- Cues stay **on by default**: the start cue is the only confirmation that
+  hold-to-talk actually engaged while your eyes are on the text field, and a
+  missed start costs you a whole re-dictation. One switch turns it all off.
+- On a machine that can't do in-memory playback, cues are now **silent** rather
+  than falling back to `winsound.Beep` — a fixed, full-volume square wave with
+  no volume control, which is the opposite of what this release is for.
+
 ## [0.3.0] — 2026-07-24
 
 The first public release.
