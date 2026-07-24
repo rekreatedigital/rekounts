@@ -4,6 +4,7 @@ import time
 
 from rekounts.audio_utils import normalize_gain
 from rekounts.state_machine import StateMachine
+from rekounts.text_inserter import undelivered_message
 from rekounts.transcriber import is_hallucination
 
 log = logging.getLogger(__name__)
@@ -302,14 +303,22 @@ class AppController:
         outcome = self.inserter.insert(cleaned)
         inserted = _insertion_succeeded(outcome)
         if not inserted:
-            self.on_notice(self._undelivered_notice())
+            self.on_notice(self._undelivered_notice(outcome))
         # Fire AFTER insertion regardless of outcome: the history is the safety
         # net when the cursor wasn't in a text field.
         self.on_result(raw, cleaned, duration_s, inserted)
 
-    def _undelivered_notice(self) -> str:
-        """Wording for a dictation that never reached a text field."""
-        return "Saved to History — no text field was focused."
+    def _undelivered_notice(self, outcome) -> str:
+        """Wording for a dictation that did not reach the cursor.
+
+        This is the notice the user actually sees — the app builds its
+        TextInserter without an ``on_notice`` hook, so the inserter's own table
+        never fires outside tests. It therefore has to be right for EVERY
+        outcome, not just "no text field": see
+        :func:`rekounts.text_inserter.undelivered_message`, which both surfaces
+        now share so they cannot drift.
+        """
+        return undelivered_message(outcome)
 
     def is_recording(self) -> bool:
         return self.sm.state.name == "RECORDING"

@@ -150,6 +150,47 @@ _UNDELIVERED = frozenset({
 })
 
 
+# The ONE table of wording for a dictation that did not reach the cursor.
+#
+# There used to be two — this one and a second in AppController — and they
+# drifted. The controller's was the one users actually saw (the app builds its
+# inserter with on_notice=None), it branched only on whether the text had been
+# parked, and so it said "no text field was focused" no matter what had gone
+# wrong. Wrong for an elevated window, and actively harmful for INTERRUPTED,
+# where a field WAS focused and part of the sentence is already sitting in it:
+# a user who believes nothing landed copies from the dashboard and pastes a
+# duplicate on top.
+_UNDELIVERED_MESSAGES = {
+    InsertResult.NO_TARGET.value:
+        "No text field was focused — the transcript is in History, ready to copy.",
+    InsertResult.BLOCKED.value:
+        "Can't type into an admin window — the transcript is in History, ready "
+        "to copy.",
+    InsertResult.INTERRUPTED.value:
+        "Typing stopped part-way — a key was still held down. Part of it is "
+        "already in the field; the whole transcript is in History, ready to copy.",
+    InsertResult.FAILED.value:
+        "Couldn't insert the dictated text — it's in History, ready to copy.",
+}
+_UNDELIVERED_FALLBACK = (
+    "The dictation couldn't be inserted — it's in History, ready to copy.")
+
+
+def undelivered_message(outcome) -> str:
+    """Human wording for ``outcome``, for a dictation that did not land.
+
+    Public because the notice the user actually sees is raised by the
+    controller, not by :attr:`TextInserter.on_notice` (which is None in the
+    app). Both go through here so the strings cannot drift apart again.
+
+    ``outcome`` is matched by its string value, so a plain token, a bare False
+    from a legacy inserter, or an outcome this module has not met yet all
+    degrade to the generic wording instead of raising.
+    """
+    key = str(getattr(outcome, "value", outcome)).strip().lower()
+    return _UNDELIVERED_MESSAGES.get(key, _UNDELIVERED_FALLBACK)
+
+
 # ---------------------------------------------------------------------------
 # Windows constants (kept local so the module has no hard pywin32 import at top)
 # ---------------------------------------------------------------------------
@@ -1178,20 +1219,9 @@ class TextInserter:
     def _notify(self, result):
         if self.on_notice is None:
             return result
-        msg = {
-            InsertResult.NO_TARGET:
-                "No text field was focused — the transcript is in History.",
-            InsertResult.BLOCKED:
-                "Can't type into an admin window — the transcript is in History.",
-            InsertResult.INTERRUPTED:
-                "Typing stopped — a key was still held down. The transcript is "
-                "in History.",
-            InsertResult.FAILED:
-                "Couldn't insert the dictated text — it's in History.",
-        }.get(result)
-        if msg:
+        if result in _UNDELIVERED:
             try:
-                self.on_notice(msg)
+                self.on_notice(undelivered_message(result))
             except Exception:
                 pass
         return result

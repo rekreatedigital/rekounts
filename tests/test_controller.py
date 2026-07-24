@@ -260,6 +260,49 @@ def test_on_result_fires_inserted_false_when_no_text_field():
     assert any("history" in n.lower() for n in notices)
 
 
+def _notice_for(outcome):
+    inserter = RecordingInserter(outcome=outcome)
+    ctrl, rec, trans, inserter, states, results, notices, errors = build(
+        inserter=inserter)
+    ctrl.start_recording()
+    ctrl.stop_recording()
+    assert notices, outcome
+    return notices[0]
+
+
+def test_a_blocked_target_is_not_reported_as_no_text_field():
+    # A field WAS focused; it was an admin window that refused the injection.
+    msg = _notice_for("blocked").lower()
+    assert "no text field" not in msg
+    assert "admin" in msg
+
+
+def test_an_interrupted_delivery_warns_that_part_of_it_already_landed():
+    # The field was focused and part of the sentence is sitting in it. Telling
+    # the user nothing landed makes them paste a duplicate on top from History.
+    msg = _notice_for("interrupted").lower()
+    assert "no text field" not in msg
+    assert "already in the field" in msg
+    assert "held down" in msg
+
+
+def test_a_bare_false_outcome_gets_generic_wording_not_a_wrong_claim():
+    # A legacy/wrapped inserter can report failure without saying which kind.
+    # Guessing "no text field was focused" there is a lie we don't need to tell.
+    msg = _notice_for(False).lower()
+    assert "no text field" not in msg
+    assert "history" in msg
+
+
+def test_the_notice_comes_from_the_inserter_s_one_table():
+    # Two tables drift; this is what stops them being two.
+    from rekounts.text_inserter import InsertResult, undelivered_message
+
+    for outcome in (InsertResult.NO_TARGET, InsertResult.BLOCKED,
+                    InsertResult.INTERRUPTED, InsertResult.FAILED):
+        assert _notice_for(outcome) == undelivered_message(outcome)
+
+
 def test_undelivered_notice_never_mentions_the_clipboard():
     # An undeliverable dictation goes to the dashboard, not the clipboard —
     # taking someone's clipboard without asking is the bug, not the fallback.

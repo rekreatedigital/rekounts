@@ -400,6 +400,28 @@ def test_the_notice_points_at_history_not_the_clipboard():
     assert "clipboard" not in notices[0].lower()
 
 
+def test_the_inserter_notice_comes_from_the_shared_table():
+    from rekounts.text_inserter import undelivered_message
+
+    notices = []
+    be = FakeBackend(no_target=True)
+    ins = TextInserter(restore_delay=0, modifier_timeout=0.05,
+                       on_notice=notices.append, backend=be)
+    ins.insert("hello")
+    assert notices == [undelivered_message(InsertResult.NO_TARGET)]
+
+
+def test_every_undelivered_outcome_has_its_own_wording():
+    from rekounts.text_inserter import _UNDELIVERED, undelivered_message
+
+    messages = {o: undelivered_message(o) for o in _UNDELIVERED}
+    assert len(set(messages.values())) == len(_UNDELIVERED)
+    # Only the genuinely-no-target case may claim there was no text field.
+    for outcome, msg in messages.items():
+        if outcome is not InsertResult.NO_TARGET:
+            assert "no text field" not in msg.lower(), outcome
+
+
 def test_insert_takes_no_required_keyword_arguments():
     # Callers wrap this object (the scratchpad router delegates with a bare
     # insert(text)); a required keyword here would break them.
