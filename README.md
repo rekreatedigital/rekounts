@@ -249,8 +249,9 @@ dictation.
   length; and the phantom-phrase filter.
 - **System** — launch at login, sound effects, the on-screen pill, and tray
   notifications.
-- **Data & Privacy** — the dictation-history switch, **Clear all**, and an
-  **Open folder** shortcut to where your data lives.
+- **Data & Privacy** — the dictation-history switch, **Clear all**, **Open
+  folder** shortcuts to where your data lives and to the diagnostic log, and
+  **Send feedback…**.
 
 Only a few tuning knobs remain config-file-only — edit
 `%APPDATA%\Rekounts\config.json` and relaunch: `beam_size` (transcription
@@ -274,9 +275,34 @@ beam width) and `preroll_seconds`.
   typing into an elevated one. You will get a notice saying so; your text is
   still saved in the Hub, so you can copy it from there.
 - **Tagalog accuracy is rough:** switch **Model** to `medium` and speak clearly.
-- **Anything else:** `%APPDATA%\Rekounts\logs\rekounts.log`. To capture a
-  detailed hotkey trace for a bug report, set the environment variable
-  `REKOUNTS_LOG_LEVEL=DEBUG` before launching and reproduce the problem.
+- **Anything else:** `%APPDATA%\Rekounts\logs\rekounts.log` — Settings →
+  **Data & Privacy** → **Diagnostic log** → **Open folder** takes you straight
+  there. To capture a detailed hotkey trace for a bug report, set the
+  environment variable `REKOUNTS_LOG_LEVEL=DEBUG` before launching and
+  reproduce the problem.
+
+## Telling us it broke
+
+<p align="center">
+  <img src="docs/img/feedback-dialog.png" width="620"
+       alt="The Send Feedback window: two channel buttons, the diagnostics block, Copy and Save — and no Send button" />
+  <br /><em>Everything that would leave, on screen before any of it does</em>
+</p>
+
+Tray menu → **Send Feedback…** (or Settings → **Data & Privacy**). It opens a
+window that shows you a short diagnostics block — versions, and four settings —
+and offers two ways to send it:
+
+- a **prefilled GitHub issue**, which is public, searchable and gets replies,
+  but needs a GitHub account; or
+- a **prefilled email**, which needs no account at all.
+
+Pick either and it opens in your browser or mail client **unsent**, for you to
+read, edit and send yourself. Rekounts has no server and transmits nothing: the
+window has **Copy** and **Save**, and no Send button. Your transcripts,
+Scratchpad, Dictionary and history are never part of it, and your user name,
+machine name and folder paths are stripped out — see
+[docs/privacy.md](docs/privacy.md).
 
 ## Where your stuff lives
 

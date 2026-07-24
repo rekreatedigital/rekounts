@@ -90,9 +90,12 @@ your Windows user profile can read these files, exactly like your documents.
 
 ## When the app touches the network
 
-Three times. Two of them are one-off or triggered by you clicking something; the
-third is a check you can switch on, which is off until you do. There are no
-background pings, no update daemon, and no account server.
+Four moments, and it is worth splitting them in two. **Rekounts itself makes
+two requests** — the one-time model download, and the update check. The other
+two make no request at all: they hand a link to your browser or your mail
+client, which is still your machine reaching out, so they are listed here
+rather than quietly left out. There are no background pings, no update daemon,
+and no account server.
 
 1. **Downloading the speech model — once, on first use of a model.**
    The first launch (and the first time you pick a different model size) fetches
@@ -142,6 +145,27 @@ background pings, no update daemon, and no account server.
 3. **Help — only when you click it.** Tray menu → **Help** opens this project's
    README in your normal web browser. That request is made by your browser, not
    by Rekounts.
+4. **Send Feedback — only when you click it, and still not sent.** Tray menu →
+   **Send Feedback…** (also Settings → Data & Privacy) opens a window that
+   shows you a short diagnostics block and offers two ways to send it. Neither
+   is a request from Rekounts: one opens a **prefilled GitHub issue form** in
+   your browser, the other opens a **prefilled email** in your mail client.
+   Both arrive unsent. You read them, edit them, delete anything you would
+   rather not send — and nothing goes anywhere until *you* press submit or
+   send.
+
+   The diagnostics block is app version, Windows version, Python version,
+   whether you are running the installed build, and four settings: model,
+   processing, insertion mode and language. That is the whole list, and the
+   window shows it to you before any of it moves — it has **Copy** and
+   **Save**, and deliberately **no Send button**.
+
+   Never included: your transcripts, your Scratchpad, your Dictionary, your
+   history, your microphone's name (which often contains a person's name), your
+   Windows user name, your machine name, and your home-folder path. If you tick
+   the optional box to attach the last few log lines, those are capped and the
+   paths in them are rewritten (`C:\Users\you\…` becomes `%USERPROFILE%\…`)
+   before you ever see them, let alone send them.
 
 Your voice, your transcripts, your history and your settings are never part of
 any of these.

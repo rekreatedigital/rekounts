@@ -7,6 +7,40 @@ The version string lives in one place — `rekounts/__init__.py` — and
 everything else (`pyproject.toml`, the `.exe` file properties) reads it from
 there.
 
+## [Unreleased]
+
+### Added: Send Feedback — with nothing on the other end
+
+You can now tell the developer that something broke, from the tray menu
+(**Send Feedback…**) or from Settings → **Data & Privacy**.
+
+There is still no server, and there never will be. The window that opens shows
+you a short diagnostics block — app version, Windows version, Python version,
+whether this is the installed build, and four settings (model, processing,
+insertion mode, language) — and then offers two ways to send it, because not
+everyone has a GitHub account:
+
+- a **prefilled GitHub issue**, which is public, searchable, and gets replies; or
+- a **prefilled email**, which needs no account at all.
+
+Either one opens in your own browser or mail client **already written and not
+yet sent**. You read it, change it, delete anything you would rather keep, and
+send it yourself. Rekounts transmits nothing: the window has **Copy** and
+**Save**, and deliberately no Send button.
+
+Never included: your transcripts, your Scratchpad, your Dictionary, your
+history, your microphone's name, your Windows user name, your machine name, or
+your home-folder path. There is an optional tickbox to attach the last few log
+lines; those are capped, and paths in them are rewritten to `%USERPROFILE%\…`
+before you see them.
+
+- Settings → **Data & Privacy** also gained a **Diagnostic log → Open folder**
+  shortcut, so "can you send me your log?" no longer means being talked through
+  `%APPDATA%`.
+- The privacy page, `SECURITY.md` and the note at the bottom of Settings now
+  count **four** network moments instead of two or three, and say plainly that
+  two of them are your browser or mail client rather than the app.
+
 ## [0.4.0] — 2026-07-25
 
 ### Fixed: long dictations no longer arrive scrambled

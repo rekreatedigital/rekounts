@@ -3,12 +3,19 @@
 Rekounts is a local desktop app (Windows today; a macOS port is code-complete
 pending hardware verification). There is no server component, no account
 system and no telemetry — your audio and text stay on the machine. The attack
-surface is the app itself plus its two network moments: the one-time speech-model
-download from **this project's own GitHub release host** (never Hugging Face —
-see [docs/privacy.md](docs/privacy.md)), and the read-only GitHub API call behind
-**Check for Updates**. Both are triggered by you, with one opt-in exception:
-**Settings → System → Check for updates automatically** (off by default) makes
-that same read-only API call once per launch.
+surface is the app itself plus its two outbound requests: the one-time
+speech-model download from **this project's own GitHub release host** (never
+Hugging Face — see [docs/privacy.md](docs/privacy.md)), and the read-only GitHub
+API call behind **Check for Updates**. Both are triggered by you, with one
+opt-in exception: **Settings → System → Check for updates automatically** (off
+by default) makes that same read-only API call once per launch.
+
+Two further moments involve the network without the app requesting anything:
+**Help** and **Send Feedback…** hand a URL to your browser or your mail client.
+Feedback carries a diagnostics block the app shows you first — versions and
+settings only, with paths, user name and machine name scrubbed out — and it is
+composed unsent, so nothing leaves until you send it yourself. Four moments in
+total; [docs/privacy.md](docs/privacy.md) lists them one by one.
 
 ## Reporting a vulnerability
 

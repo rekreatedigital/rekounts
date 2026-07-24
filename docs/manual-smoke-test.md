@@ -160,6 +160,25 @@ All of these live in **Settings → Audio**, under the microphone.
 - [ ] **Quit** → tray icon and pill disappear, process exits, the mic is
       released.
 
+## Send Feedback (tray → Send Feedback…, and Settings → Data & Privacy)
+
+- [ ] Both front doors open the **same** window, and it has **Copy**, **Save…**
+      and **no Send button** anywhere.
+- [ ] Read the diagnostics block line by line. It must NOT contain your Windows
+      user name, your machine name, `C:\Users\<you>`, your microphone's name, or
+      a single word of anything you have ever dictated.
+- [ ] **Open a GitHub issue…** → your browser opens GitHub's *new issue* form,
+      already filled in, and **nothing is posted**. Close the tab; no issue
+      exists.
+- [ ] **Email …** → your mail client opens a new message, already written, sitting
+      unsent in the compose window. Close it without sending.
+- [ ] Tick **Include the last 40 log lines** → the block grows, and the paths in
+      those lines read `%USERPROFILE%\…`, never your real folder.
+- [ ] **Copy** → paste into Notepad; you get exactly what was on screen.
+      **Save…** → the file holds the same text.
+- [ ] Settings → Data & Privacy → **Diagnostic log** → **Open folder** opens
+      `%APPDATA%\Rekounts\logs` in Explorer.
+
 ## The Hub (tray → Open Dashboard)
 
 - [ ] **Dictation**: your recent dictations appear newest-first, grouped by day.
