@@ -68,3 +68,35 @@ under a few hundred KB; at 2x the dark UI compresses to about 60–100 KB.
 Afterwards, **look at every image before committing** — open each one, read
 every visible string, and confirm there is nothing in it you would not put on a
 billboard. The README embeds all four at `width="820"`.
+
+## Send Feedback
+
+```bat
+.venv\Scripts\python.exe tools\capture_feedback_shots.py
+```
+
+rewrites `docs/img/feedback-dialog.png` (the review window) and
+`docs/img/feedback-menu.png` (the tray menu the entry lives in). Rerun it after
+any change to `rekounts/ui/feedback_dialog.py`, `rekounts/feedback.py` or
+`rekounts/ui/tray.py`.
+
+Same sandbox as the Hub tool, plus two differences forced by what is being
+photographed:
+
+- **The machine's identity is pinned**, not just scrubbed: `USERNAME`,
+  `USERPROFILE` and `COMPUTERNAME` are set to `you` / `C:\Users\you` / `PC`
+  before `rekounts` is imported, so the image is the same wherever it is
+  regenerated. The tool then **asserts** that the real user name, machine name
+  and home path are absent from the captured block, and refuses to finish
+  rather than publish a leak. This is a picture of the window whose entire job
+  is to prove it leaks nothing.
+- **The tray menu is popped up, not rendered.** A `QMenu` computes its action
+  rectangles on the way to being shown and the Windows theme engine ignores a
+  manually scaled render target, so `QWidget.render()` returns a blank
+  rectangle. It is popped up at (-8000, -8000) — off every monitor, so still
+  nothing flashes — and grabbed. That is why the whole process runs at
+  `QT_SCALE_FACTOR=2` rather than rendering into a 2x pixmap: `widget.grab()`
+  can only give 2x if the app was started that way.
+
+The tray icon is created and hidden before the event loop can paint it, so this
+is safe to run while the app itself is running.
