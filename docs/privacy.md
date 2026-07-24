@@ -99,7 +99,7 @@ background pings, no update daemon, and no account server.
    the model from **this project's own release host**:
 
    ```
-   https://github.com/ryankyleocampo-github/talkativeai-models/releases/download/...
+   https://github.com/rekreatedigital/rekounts-models/releases/download/...
    ```
 
    That is the only host involved. The app **never contacts `huggingface.co`** —

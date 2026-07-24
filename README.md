@@ -255,7 +255,7 @@ you can roll back; delete it whenever you are happy.
 The speech models are downloaded from **this project's own release host**:
 
 ```
-https://github.com/ryankyleocampo-github/talkativeai-models
+https://github.com/rekreatedigital/rekounts-models
 ```
 
 The app **never contacts `huggingface.co`** — not on first run, not ever. That is

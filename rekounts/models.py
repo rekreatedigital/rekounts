@@ -41,7 +41,7 @@ log = logging.getLogger(__name__)
 # the app repo itself is private. Asset names are `<model>--<file>` (unique per
 # release); the URL for any file is derived in file_url() so the manifest stays
 # compact and one host/tag change re-points everything.
-MODEL_HOST = "https://github.com/ryankyleocampo-github/talkativeai-models/releases/download"
+MODEL_HOST = "https://github.com/rekreatedigital/rekounts-models/releases/download"
 # Default release tag holding the model assets. A model may override it (a new
 # model can ship in its own release) via a "tag" key in its manifest entry.
 DEFAULT_RELEASE_TAG = "models-v1"
