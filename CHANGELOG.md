@@ -7,7 +7,9 @@ The version string lives in one place — `rekounts/__init__.py` — and
 everything else (`pyproject.toml`, the `.exe` file properties) reads it from
 there.
 
-## [Unreleased]
+## [0.3.0] — 2026-07-24
+
+The first public release.
 
 ### macOS: the port is written, pending real-hardware verification
 
@@ -64,10 +66,6 @@ glyph in code and the `.exe` had no icon at all.
 
 The privacy page has been updated to match — see
 [docs/privacy.md](docs/privacy.md) for exactly what that request contains.
-
-## [0.3.0] — 2026-07-24
-
-The first public release.
 
 ### The app is now called Rekounts
 
