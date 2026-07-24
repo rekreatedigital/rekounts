@@ -415,6 +415,9 @@ class SettingsPage(QtWidgets.QWidget):
                         "setting has no effect until you turn Live typing off.")
 
     test_done = QtCore.Signal(str)
+    # Pending-apply text, emitted so set_status() is safe to call from the
+    # worker thread a model reload finishes on.
+    _status_changed = QtCore.Signal(str)
 
     def __init__(self, config, history=None, on_saved=None, startup_setter=None,
                  startup_getter=None):
@@ -433,6 +436,7 @@ class SettingsPage(QtWidgets.QWidget):
         self._apply_timer.setSingleShot(True)
         self._apply_timer.setInterval(self.APPLY_DELAY_MS)
         self._apply_timer.timeout.connect(self._flush_apply)
+        self._status_changed.connect(self._apply_status)
 
         root = QtWidgets.QVBoxLayout(self)
         left, top, right, bottom = theme.PAGE_MARGINS
@@ -442,6 +446,17 @@ class SettingsPage(QtWidgets.QWidget):
         title = QtWidgets.QLabel("Settings")
         title.setProperty("role", "page-title")
         root.addWidget(title)
+
+        # Pending-apply strip. Hidden until something is genuinely deferred (a
+        # model reload in flight, a mic change made mid-recording). Deliberately
+        # NOT a toast: toasts are gated by the notifications switch, and with
+        # that switch off the multi-second model reload was invisible — the
+        # user kept dictating on the old model with nothing on screen to say so.
+        self.status = QtWidgets.QLabel("")
+        self.status.setProperty("role", "row-hint")
+        self.status.setWordWrap(True)
+        self.status.setVisible(False)
+        root.addWidget(self.status)
 
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
@@ -464,6 +479,22 @@ class SettingsPage(QtWidgets.QWidget):
         # streaming model then) — reflect that from the start, not just on change.
         self._sync_model_availability(bool(self.config.get("live_typing")))
 
+    # -------------------------------------------------------- pending status
+    @QtCore.Slot(str)
+    def set_status(self, text):
+        """Show (or clear, with "") what has NOT been applied yet.
+
+        Called from the app's live-apply, which can reach here off the GUI
+        thread (a model reload finishes on a worker), so it hops through a
+        signal like the overlay does.
+        """
+        self._status_changed.emit(text or "")
+
+    @QtCore.Slot(str)
+    def _apply_status(self, text):
+        self.status.setText(text)
+        self.status.setVisible(bool(text))
+
     # ----------------------------------------------------------- persistence
     def _persist(self, key, value):
         """Write one setting, then schedule the live-apply."""
@@ -476,7 +507,18 @@ class SettingsPage(QtWidgets.QWidget):
         self._schedule_apply()
 
     def _schedule_apply(self):
-        self._apply_timer.start()
+        """Coalesce a burst of changes into one apply — but never postpone one.
+
+        QTimer.start() RESTARTS a running timer, so the old code re-armed the
+        full delay on every change: working down the page, or dragging a
+        spinbox, kept pushing the apply further away for as long as the user
+        kept touching settings. That is the "it took a few seconds" the report
+        describes. Letting a running timer run out instead bounds the wait at
+        APPLY_DELAY_MS from the FIRST unapplied change, and anything changed
+        after it fires is picked up by the next one.
+        """
+        if not self._apply_timer.isActive():
+            self._apply_timer.start()
 
     def _flush_apply(self):
         """Run the app's live-apply now. Never lets a failure escape into Qt."""

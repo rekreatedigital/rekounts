@@ -68,6 +68,9 @@ applies on its own within a moment. Throughout this section the app must
 - [ ] **Test** button: reads "Heard you clearly" while you speak, "Silent"
       with the mic muted. **Refresh** re-scans devices after plugging one in.
 - [ ] **Language** = Tagalog, speak Tagalog → Tagalog text appears.
+- [ ] **Language, then dictate IMMEDIATELY** (within a second of the change)
+      → the new language is used. It must not take a second dictation to
+      "stick".
 - [ ] **Model** = `medium` → toast "Loading model…", the app stays usable,
       then "Model ready (medium)". Dictation still works (slower, more
       accurate). Set it back to `base`.
@@ -80,6 +83,33 @@ applies on its own within a moment. Throughout this section the app must
       "um hello" → the "um" survives. Turn it back on.
 - [ ] **Insert text by** = keystrokes, dictate → text is typed
       character-by-character and your clipboard is untouched.
+
+## Settings — nothing deferred without saying so
+
+The point of this section is that a change you cannot have yet is *visible*.
+Run the whole thing with **Settings → System → Tray notifications OFF**, which
+is the case that used to have no signal at all.
+
+- [ ] **Model** = `medium` with notifications off → the pill grows a small
+      **amber dot**, and hovering it reads *"Loading medium… dictation still
+      uses <old model>."* The Settings page shows the same line under its
+      title. Dictate during the load → it still works (on the old model), and
+      the dot is still there on the recording pill.
+- [ ] When the load finishes → the dot and both messages disappear on their
+      own. Set the model back and confirm the same both ways.
+- [ ] **Change the model twice quickly** (`medium`, then `base`) → the message
+      names the model you picked *last*, and does not clear until that one is
+      ready. It must never say "ready" for a model you already moved off.
+- [ ] Turn **"Catch the first syllable" (pre-roll) ON**, change the
+      **microphone**, then dictate immediately → the recording contains only
+      audio from the NEW mic. (Easiest check: mute the new mic — you should get
+      "no speech detected", not half a second of the old mic's room noise.)
+- [ ] With pre-roll on, **change the microphone while a hands-free recording is
+      running** → the recording in flight is not cut off, the pill shows the
+      amber dot with *"New microphone starts with your next dictation."*, and
+      that message clears the moment the recording ends.
+- [ ] **Tray → Microphone submenu** with pre-roll on → same behaviour as
+      changing it in the Hub (this path bypasses the Hub entirely).
 
 ## Settings — System & Privacy switches
 

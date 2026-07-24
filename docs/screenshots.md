@@ -11,8 +11,14 @@ be on screen.
 .venv\Scripts\python.exe tools\capture_pill_shots.py
 ```
 
-renders the real overlay widget and rewrites the four `docs/img/pill-*.png`
-tiles. Rerun it after any change to `rekounts/ui/overlay.py`.
+renders the real overlay widget and rewrites the seven `docs/img/pill-*.png`
+tiles — the four resting states plus the three pending ones (a settings change
+that has not landed yet). Rerun it after any change to `rekounts/ui/overlay.py`.
+
+Tiles share one size so the README grid lines up. The hovered pending pill
+spells out a whole sentence and does not fit, so it widens its own tile rather
+than being cropped or having its text trimmed for the camera — the shot has to
+be what the user actually sees.
 
 ## The Hub
 

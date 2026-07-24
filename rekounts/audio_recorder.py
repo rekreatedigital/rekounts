@@ -42,6 +42,13 @@ class AudioRecorder:
     The device name is re-resolved on every ``start()`` (and, in pre-roll mode,
     the stream is reopened if the resolved device changed) so live settings
     changes take effect on the next recording without recreating the recorder.
+    ``resync_device()`` applies a mic change to the pre-roll stream immediately
+    instead of waiting for that next ``start()``.
+
+    Reopening the stream always drops the pre-roll ring: those chunks came from
+    a different device (or across a discontinuity), and seeding a recording with
+    them is how a fresh dictation ended up opening with audio from the
+    microphone the user had just switched away from.
     """
 
     def __init__(self, device=None, sample_rate=SAMPLE_RATE, preroll_seconds=0.0,
@@ -107,12 +114,22 @@ class AudioRecorder:
 
     def _open_stream(self, idx):
         self._close_stream()
+        # Every reopen is an audio discontinuity, and after a device change the
+        # buffered chunks were captured on a DIFFERENT microphone. Seeding the
+        # next recording with them made a fresh dictation open with up to
+        # `preroll_seconds` of audio from the mic the user just moved away from.
+        self._drop_preroll()
         self._stream = sd.InputStream(
             samplerate=self.sample_rate, channels=1, dtype="float32",
             device=idx, callback=self._callback,
         )
         self._open_device_index = idx
         self._stream.start()
+
+    def _drop_preroll(self):
+        with self._lock:
+            self._preroll.clear()
+            self._preroll_samples = 0
 
     def _close_stream(self):
         if self._stream is not None:
@@ -134,6 +151,36 @@ class AudioRecorder:
         if self._stream is not None and self._open_device_index == idx:
             return
         self._open_stream(idx)
+
+    def resync_device(self) -> bool:
+        """Move the always-open pre-roll stream onto the CURRENTLY configured
+        microphone, right now. Returns whether the stream was reopened.
+
+        Called when the user changes the mic in settings. Without it the
+        continuous stream kept capturing from the old device until the next
+        ``start()``, so the pre-roll the next dictation opens with came from the
+        microphone the user had just moved away from.
+
+        Deliberately a no-op in three cases, each of which would cost the user
+        audio rather than save it:
+
+        * pre-roll off — there is no open stream to move, and ``start()``
+          already resolves the device fresh;
+        * a recording is in flight — reopening mid-clip would truncate it, so
+          the change is left for the next ``start()`` (the caller announces it);
+        * the device did not actually change — reopening drops the pre-roll
+          buffer, so a needless reopen would cost the next dictation its
+          first syllable.
+        """
+        if self.preroll_seconds <= 0 or self._stream is None:
+            return False
+        if self._recording:
+            return False
+        idx = self._resolve_device()
+        if self._open_device_index == idx:
+            return False
+        self._open_stream(idx)
+        return True
 
     # --- recording ---------------------------------------------------------
     def start(self) -> None:

@@ -145,6 +145,11 @@ _ICON_HI = QtGui.QColor(242, 243, 247)      # hover / primary glyph
 _WAVE = QtGui.QColor(226, 227, 233)
 _BTN_BG = QtGui.QColor(255, 255, 255, 14)
 _BTN_BG_HOVER = QtGui.QColor(255, 255, 255, 42)
+# "A setting you changed hasn't landed yet." Amber reads as in-progress rather
+# than as an error, and it is the one thing on the pill that is not greyscale,
+# so it cannot be mistaken for part of the idle mic glyph.
+_PENDING = QtGui.QColor(240, 178, 74)
+_PENDING_DOT_D = 6                # diameter of the pending dot
 
 
 def pick_screen_index(px, py, rects, default=0):
@@ -173,6 +178,7 @@ class Overlay(QtWidgets.QWidget):
     # thread: emitting a signal hops to the GUI thread (queued) automatically.
     _cmd = QtCore.Signal(str)      # "idle" | "recording" | "processing" | "hide"
     _hk = QtCore.Signal(str)
+    _pend = QtCore.Signal(str)     # pending-settings message, "" to clear
 
     def __init__(self):
         super().__init__(
@@ -193,6 +199,7 @@ class Overlay(QtWidgets.QWidget):
         self._state = "idle"
         self._enabled = True              # config "show_pill"
         self._hotkey = "F8"
+        self._pending = ""                # settings change that hasn't landed yet
         self._hovered = False
         self._hover_btn = None            # None | "cancel" | "finish"
         self._levels = deque([0.0] * _N_BARS, maxlen=_N_BARS)
@@ -215,6 +222,7 @@ class Overlay(QtWidgets.QWidget):
 
         self._cmd.connect(self._apply_cmd)
         self._hk.connect(self._apply_hotkey)
+        self._pend.connect(self._apply_pending)
 
         self._resize_for_state()
 
@@ -228,6 +236,16 @@ class Overlay(QtWidgets.QWidget):
     def set_hotkey_label(self, text):
         """Set the hotkey shown in hint text (e.g. "F8"). Thread-safe."""
         self._hk.emit(text or "")
+
+    @QtCore.Slot(str)
+    def set_pending(self, text):
+        """Show (or clear, with "") a settings change that has NOT landed yet.
+
+        The pill is always on screen, so this is the one surface that does not
+        depend on the notifications switch — the multi-second model reload used
+        to be completely invisible with toasts turned off. Thread-safe.
+        """
+        self._pend.emit(text or "")
 
     @QtCore.Slot(bool)
     def set_pill_enabled(self, enabled):
@@ -300,6 +318,18 @@ class Overlay(QtWidgets.QWidget):
     @QtCore.Slot(str)
     def _apply_hotkey(self, text):
         self._hotkey = text or ""
+        if self._hovered:
+            self._resize_for_state()
+            self._reposition()
+        self.update()
+
+    @QtCore.Slot(str)
+    def _apply_pending(self, text):
+        if text == self._pending:
+            return
+        self._pending = text
+        # The pending message replaces the idle hint, so the hovered pill has to
+        # be re-measured for it.
         if self._hovered:
             self._resize_for_state()
             self._reposition()
@@ -432,6 +462,10 @@ class Overlay(QtWidgets.QWidget):
         return f
 
     def _idle_hint(self):
+        # A pending change is the more useful thing to say: the user just made
+        # it, and it is why this dictation may not behave as they expect.
+        if self._pending:
+            return self._pending
         return "Hold %s to dictate" % (self._hotkey or "hotkey")
 
     def _recording_hint(self):
@@ -472,6 +506,7 @@ class Overlay(QtWidgets.QWidget):
             self._paint_processing(p, r)
         else:
             self._paint_idle(p, r)
+        self._draw_pending_dot(p, r)
 
     def _paint_idle(self, p, r):
         if self._hovered:
@@ -483,6 +518,26 @@ class Overlay(QtWidgets.QWidget):
                        self._idle_hint())
         else:
             self._draw_mic(p, r.center(), _ICON)
+
+    def _draw_pending_dot(self, p, r):
+        """A small amber dot on the pill while a change hasn't landed yet.
+
+        Drawn in EVERY state, not just idle: a dictation started inside a stale
+        window is exactly the case the user needs flagged, and the recording
+        pill is what is on screen then. Sits in the top-right rounded corner,
+        clear of the mic glyph, the hint text and the ✓ button.
+        """
+        if not self._pending:
+            return
+        # Tucked right into the corner: any further in and it clips the ✓
+        # button's ring on the (taller, wider) recording pill.
+        d = _PENDING_DOT_D
+        dot = QtCore.QRectF(r.right() - d - 6, r.top() + 6, d, d)
+        p.save()
+        p.setPen(QtCore.Qt.NoPen)
+        p.setBrush(_PENDING)
+        p.drawEllipse(dot)
+        p.restore()
 
     def _draw_mic(self, p, center, color):
         """A tiny minimalist microphone glyph (monochrome), centered on `center`."""

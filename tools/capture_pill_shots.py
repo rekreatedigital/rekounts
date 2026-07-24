@@ -25,7 +25,9 @@ from rekounts.ui.overlay import Overlay  # noqa: E402
 
 OUT_DIR = Path(__file__).resolve().parents[1] / "docs" / "img"
 SCALE = 2                 # devicePixelRatio of the output PNGs
-TILE_W, TILE_H = 240, 90  # logical px; every tile the same size for a tidy grid
+TILE_W, TILE_H = 240, 90  # logical px; the shared tile size
+_MIN_MARGIN = 8           # breathing room a pill needs to count as "fits"
+_TILE_PAD = 16            # padding when a pill forces a wider tile (see _tile)
 
 # The app passes the config hotkey uppercased (see __main__._hotkey_label).
 HOTKEY_LABEL = "CTRL+WIN"
@@ -55,14 +57,25 @@ def _grab(widget) -> QtGui.QPixmap:
 
 
 def _tile(pill: QtGui.QPixmap) -> QtGui.QPixmap:
-    """Center a pill render on a light neutral backdrop card."""
-    out = QtGui.QPixmap(TILE_W * SCALE, TILE_H * SCALE)
+    """Center a pill render on a light neutral backdrop card.
+
+    Tiles share one size so the README grid stays tidy, but a pill wider than
+    that (the hovered pending pill, which spells out the whole message) widens
+    its own tile rather than being cropped or having its text shortened for the
+    camera — the shot has to be what the user actually sees.
+    """
+    w = pill.width() / pill.devicePixelRatio()
+    h = pill.height() / pill.devicePixelRatio()
+    fits = w + 2 * _MIN_MARGIN <= TILE_W
+    tile_w = TILE_W if fits else int(w) + 2 * _TILE_PAD
+
+    out = QtGui.QPixmap(tile_w * SCALE, TILE_H * SCALE)
     out.setDevicePixelRatio(SCALE)
     out.fill(QtCore.Qt.transparent)
     p = QtGui.QPainter(out)
     p.setRenderHint(QtGui.QPainter.Antialiasing)
 
-    r = QtCore.QRectF(0.5, 0.5, TILE_W - 1, TILE_H - 1)
+    r = QtCore.QRectF(0.5, 0.5, tile_w - 1, TILE_H - 1)
     g = QtGui.QLinearGradient(r.topLeft(), r.bottomLeft())
     g.setColorAt(0.0, QtGui.QColor("#eef0f3"))
     g.setColorAt(1.0, QtGui.QColor("#e2e5e9"))
@@ -70,9 +83,7 @@ def _tile(pill: QtGui.QPixmap) -> QtGui.QPixmap:
     p.setPen(QtGui.QPen(QtGui.QColor("#d2d5da"), 1))
     p.drawRoundedRect(r, 12, 12)
 
-    w = pill.width() / pill.devicePixelRatio()
-    h = pill.height() / pill.devicePixelRatio()
-    p.drawPixmap(QtCore.QPointF((TILE_W - w) / 2.0, (TILE_H - h) / 2.0), pill)
+    p.drawPixmap(QtCore.QPointF((tile_w - w) / 2.0, (TILE_H - h) / 2.0), pill)
     p.end()
     return out
 
@@ -113,11 +124,35 @@ def main():
     overlay._phase = 1.2
     shots["pill-processing"] = _grab(overlay)
 
+    # pending — a settings change that has not landed yet. The amber dot is the
+    # one surface the "Tray notifications" switch cannot hide, so it is worth
+    # showing in the README alongside the states it decorates.
+    overlay.set_pending("Loading Medium… dictation still uses Small.")
+    overlay._apply_pending(overlay._pending)   # no event loop here to deliver it
+
+    to_state("idle")
+    shots["pill-pending"] = _grab(overlay)
+
+    overlay._hovered = True
+    overlay._resize_for_state()
+    shots["pill-pending-hover"] = _grab(overlay)
+    overlay._hovered = False
+
+    # ...and on the recording pill, which is what is on screen if the user
+    # dictates before the reload finishes.
+    to_state("recording")
+    overlay._levels.extend(_speech_levels(len(overlay._levels)))
+    overlay._phase = 2.0
+    shots["pill-recording-pending"] = _grab(overlay)
+    overlay.set_pending("")
+    overlay._apply_pending("")
+
     for name, pill in shots.items():
         path = OUT_DIR / f"{name}.png"
-        _tile(pill).save(str(path), "PNG")
+        tile = _tile(pill)
+        tile.save(str(path), "PNG")
         print(f"wrote {path.relative_to(OUT_DIR.parents[1])}"
-              f"  ({TILE_W}x{TILE_H} @{SCALE}x)")
+              f"  ({tile.width() // SCALE}x{tile.height() // SCALE} @{SCALE}x)")
 
 
 if __name__ == "__main__":

@@ -153,6 +153,60 @@ def pick_installed_fallback(requested, default, is_installed=None, known=None):
     return None
 
 
+class PendingApplies:
+    """What the user has changed that has NOT taken effect yet.
+
+    Almost every setting in Rekounts is live, but two are genuinely deferred and
+    both used to be announced only as a toast — which the "Tray notifications"
+    switch silences. With it off, a model reload (seconds long, during which the
+    OLD model keeps transcribing) was completely invisible: the user changed the
+    model, dictated, got the old model's output, and had nothing on screen to
+    explain it. That is the defect this exists to close.
+
+    Keyed by reason because more than one can be outstanding at once (a model
+    reload AND a mic change made mid-recording) and they clear independently,
+    from different threads — a single string would let one silently erase the
+    other's message. Sinks are pushed the rendered text on every change; they
+    must be safe to call from any thread (the overlay and the settings page
+    both marshal onto the GUI thread themselves).
+    """
+
+    SEPARATOR = "  ·  "
+
+    def __init__(self, sinks=None):
+        self._lock = threading.Lock()
+        self._items = {}                 # reason -> message, insertion-ordered
+        self.sinks = list(sinks or [])
+
+    def set(self, reason, message):
+        """Mark `reason` pending. Replaces any previous message for it."""
+        with self._lock:
+            if self._items.get(reason) == message:
+                return
+            self._items[reason] = message
+        self._publish()
+
+    def clear(self, reason):
+        """`reason` has landed (or was superseded). No-op if it wasn't pending."""
+        with self._lock:
+            if self._items.pop(reason, None) is None:
+                return
+        self._publish()
+
+    def message(self) -> str:
+        """Everything outstanding, oldest first. "" when nothing is pending."""
+        with self._lock:
+            return self.SEPARATOR.join(self._items.values())
+
+    def _publish(self):
+        text = self.message()
+        for sink in list(self.sinks):
+            try:
+                sink(text)
+            except Exception:
+                log.exception("pending-applies sink failed")
+
+
 class ModelReloadGate:
     """Makes the newest model reload the only one that can install itself.
 
@@ -399,6 +453,18 @@ def _attach_provider(obj, name, provider):
         return False
 
 
+def _model_loading_text(loading, running=None) -> str:
+    """What the pill and the Hub say while a model reload is in flight.
+
+    Names the model still doing the work when we know it, because "loading" on
+    its own reads as "dictation is unavailable" — and the whole point of the
+    background reload is that it isn't.
+    """
+    if running and running != loading:
+        return "Loading %s… dictation still uses %s." % (loading, running)
+    return "Loading %s… dictation keeps working meanwhile." % loading
+
+
 def _apply_preroll(recorder, enabled, seconds, is_recording):
     """Live-apply the pre-roll setting to an already-built recorder.
 
@@ -602,6 +668,20 @@ def _run():
     history = History(enabled=bool(cfg.get("history_enabled")))
     hotwords_provider, replacements_provider = _dictionary_providers(history)
 
+    # Everything the transcriber needs that the user can change at runtime is
+    # PULLED from config per call rather than pushed in on save. That is what
+    # makes a language change instant: it cannot be sitting in the Hub's apply
+    # debounce, and it cannot be overwritten by a model reload that started
+    # before the change and installs its (older) Transcriber afterwards.
+    def language_provider():
+        return cfg.get("language")
+
+    def beam_size_provider():
+        return cfg.get("beam_size")
+
+    # Filled in as the UI comes up; see PendingApplies.
+    pending = PendingApplies()
+
     def build_transcriber(name, device, notify=None):
         """Make sure the model is on disk, then load it from that directory.
 
@@ -643,6 +723,11 @@ def _run():
         t = Transcriber(str(model_dir), device, cfg.get("language"),
                         beam_size=cfg.get("beam_size"))
         _attach_provider(t, "hotwords_provider", hotwords_provider)
+        # Re-attached on EVERY build, so a transcriber swapped in by a model
+        # reload inherits the same live view of the config as the one it
+        # replaces — there is no window in which it can run on captured values.
+        _attach_provider(t, "language_provider", language_provider)
+        _attach_provider(t, "beam_size_provider", beam_size_provider)
         return t
 
     def build_cleaner():
@@ -666,6 +751,9 @@ def _run():
     # every Save would hand a fresh IDLE gesture to a recording already in
     # flight, and that recording could then never be stopped by the hotkey.
     current_hotkey = cfg.get("hotkey")
+    # The mic the recorder is currently set up for, so apply_settings can tell a
+    # real device change from any other Save and only then touch the stream.
+    current_microphone = cfg.get("microphone")
     reload_gate = ModelReloadGate()
     # Warm the model on a background thread while Qt initializes, so the first
     # real dictation is as fast as the rest (no first-use warm-up lag).
@@ -740,6 +828,10 @@ def _run():
     sounds = _make_sounds(sound_effects_enabled)
 
     overlay = Overlay()
+    # The pill is on screen whatever the notifications switch says, which is
+    # exactly why the pending state goes here and not (only) to a toast.
+    if hasattr(overlay, "set_pending"):
+        pending.sinks.append(overlay.set_pending)
     overlay.level_provider = recorder.current_level
     overlay.set_hotkey_label(_hotkey_label(cfg))
     overlay.set_pill_enabled(bool(cfg.get("show_pill")))
@@ -772,18 +864,28 @@ def _run():
     # (apply_settings may swap it), without the controller importing the manager.
     hotkeys = None
 
-    def reset_hotkey_gesture():
-        """Drop any stale hotkey-gesture latch after a recording ends by a
-        non-gesture route (overlay ✓/✕, auto-stop). Without this, the gesture
-        stays latched in hands-free and the next hotkey press is swallowed
-        'stopping' a recording that is already gone."""
+    def on_recording_ended():
+        """Tidy up whatever a finished recording was holding back.
+
+        1. Drop any stale hotkey-gesture latch after a recording ends by a
+           non-gesture route (overlay ✓/✕, auto-stop). Without this, the gesture
+           stays latched in hands-free and the next hotkey press is swallowed
+           'stopping' a recording that is already gone.
+        2. Apply a microphone change that was deferred because it arrived
+           mid-recording — the clip that was holding the old device open has
+           just released it, so there is nothing left to defer.
+        """
         hk = hotkeys
-        if hk is None:
-            return
+        if hk is not None:
+            try:
+                hk.gesture.external_stop()
+            except Exception:
+                log.exception("resetting the hotkey gesture failed")
         try:
-            hk.gesture.external_stop()
+            recorder.resync_device()
         except Exception:
-            log.exception("resetting the hotkey gesture failed")
+            log.exception("re-syncing the microphone after a recording failed")
+        pending.clear("microphone")
 
     controller = AppController(
         recorder=recorder, transcriber=transcriber, cleaner=cleaner, inserter=inserter,
@@ -795,7 +897,7 @@ def _run():
         on_result=bridge.result.emit,
         max_recording_seconds=cfg.get("max_recording_seconds"),
         filter_hallucinations=cfg.get("filter_hallucinations"),
-        on_recording_ended=reset_hotkey_gesture,
+        on_recording_ended=on_recording_ended,
     )
     # Pill buttons: ✕ discards the recording, ✓ finishes it. Both controller
     # entry points are thread-safe and no-op outside the RECORDING state.
@@ -879,10 +981,40 @@ def _run():
 
     threading.Thread(target=stream_loop, daemon=True).start()
 
+    def apply_microphone():
+        """Apply a microphone change as far as it can go right now.
+
+        ``start()`` re-resolves the device, so the next dictation is always on
+        the right mic regardless. What needed fixing is the pre-roll stream: it
+        is held open continuously, so without a resync it kept capturing from
+        the OLD device — and that buffer is what seeds the next recording, which
+        is how a fresh dictation opened with audio from the previous mic.
+
+        Its own function because the tray's mic submenu bypasses the Hub's
+        live-apply entirely and needs exactly this, not the whole of
+        ``apply_settings``.
+        """
+        nonlocal current_microphone
+        new_microphone = cfg.get("microphone")
+        if new_microphone == current_microphone:
+            return
+        current_microphone = new_microphone
+        try:
+            recorder.resync_device()
+        except Exception:
+            log.exception("re-syncing the microphone stream failed")
+        if controller.is_recording():
+            # Deliberately deferred: swapping the stream under a recording in
+            # flight would truncate the user's clip. Say so — this and the model
+            # reload are the only two things in the app that do not apply at
+            # once. on_recording_ended clears it and resyncs for real.
+            pending.set("microphone",
+                        "New microphone starts with your next dictation.")
+
     def apply_settings():
         """Live-apply saved settings in-process — no restart, so there is no
         single-instance race and no lost dictation."""
-        nonlocal hotkeys, current_model_sig, current_hotkey
+        nonlocal hotkeys, current_model_sig, current_hotkey, current_microphone
 
         # Hotkey: rebuild the global listener ONLY when the hotkey itself
         # changed. Any other Save (a toggle, the model, the mic) must leave the
@@ -912,13 +1044,15 @@ def _run():
         # so a mid-recording change keeps the interval and the notice in step.
         controller.set_max_recording_seconds(cfg.get("max_recording_seconds"))
 
-        # Language and beam size are read per transcribe() call -> live, no reload.
+        # Language and beam size need nothing done here: the transcriber pulls
+        # both from config on every transcribe() call. The plain attributes are
+        # only the fallback for a Transcriber built without the providers, and
+        # are kept in step so that fallback is never stale either.
         lang = cfg.get("language")
         controller.transcriber.language = None if lang == "auto" else lang
         controller.transcriber.beam_size = cfg.get("beam_size")
 
-        # Microphone: the recorder's device_provider re-resolves on the next
-        # start(), so a mic change needs nothing rebuilt here.
+        apply_microphone()
 
         # Pre-roll: live-apply the toggle — arm the continuous stream when on,
         # release it when off — instead of only honoring it at the next launch.
@@ -944,10 +1078,17 @@ def _run():
         # Model: reload on a background thread only if name/device changed.
         new_sig = (active_model_name(), cfg.get("device"))
         if new_sig != current_model_sig:
+            running = current_model_sig[0] if current_model_sig else None
             current_model_sig = new_sig
             # Claim the generation NOW, on the UI thread, so the ordering of
             # rapid Saves is the ordering the user made them in.
             generation = reload_gate.begin()
+            # The one genuinely multi-second window in the app. Dictation keeps
+            # working on the old model throughout — that is a deliberate design
+            # win, not a bug — but until now the ONLY sign of it was a toast, so
+            # with notifications off the user got old-model output with nothing
+            # on screen to explain why. The pill and the Hub say so regardless.
+            pending.set("model", _model_loading_text(new_sig[0], running))
             bridge.notify.emit("Loading model…")
 
             def reload_model(sig=new_sig, generation=generation):
@@ -966,6 +1107,7 @@ def _run():
                         # lie — clear it or a Save back to the previous model
                         # would look like "no change" and never reload.
                         current_model_sig = None
+                        pending.clear("model")
                         bridge.notify.emit("Model reload failed: %s" % e)
                     return
 
@@ -973,6 +1115,10 @@ def _run():
                     controller.transcriber = new_trans
 
                 if reload_gate.commit(generation, install):
+                    # Only the winning generation clears the indicator: a
+                    # superseded reload finishing must not tell the user the
+                    # NEWER one it was replaced by has landed.
+                    pending.clear("model")
                     bridge.notify.emit("Model ready (%s)." % name)
                 else:
                     # A newer Save superseded this one while it was loading.
@@ -1005,6 +1151,14 @@ def _run():
         settings = SettingsWindow(cfg, on_saved=apply_settings)
         dashboard = Dashboard(cfg, history, on_open_settings=settings.show)
 
+    # Second pending sink: the Settings page itself, where the change was just
+    # made. getattr-guarded because the pre-Hub fallback above builds a separate
+    # SettingsWindow that has no page to write to.
+    settings_page = getattr(dashboard, "settings", None)
+    if settings_page is not None and hasattr(settings_page, "set_status"):
+        pending.sinks.append(settings_page.set_status)
+        settings_page.set_status(pending.message())
+
     open_settings = getattr(dashboard, "open_settings", None)
     if not callable(open_settings):
         open_settings = settings.show if settings is not None else dashboard.open_and_raise
@@ -1020,16 +1174,20 @@ def _run():
     def mic_changed(name):
         cfg.set("microphone", name)
         cfg.save()
-        # device_provider re-resolves on the next start(); nothing to rebuild.
+        # These tray shortcuts bypass the Hub's live-apply, so they have to do
+        # the same work themselves. device_provider re-resolves on the next
+        # start(); the pre-roll stream is already open and needs moving now, or
+        # it keeps buffering the mic the user just left.
+        apply_microphone()
         bridge.notify.emit("Microphone: %s — applies to the next dictation."
                            % (name or "System default"))
 
     def language_changed(code):
         cfg.set("language", code)
         cfg.save()
-        # Transcriber reads .language per transcribe() call, so this is live.
-        # Read it off the controller so a live model reload isn't clobbered.
-        controller.transcriber.language = None if code == "auto" else code
+        # Nothing to push: the transcriber reads the language from config on
+        # every transcribe() call, so this is already in effect — including for
+        # a replacement transcriber a model reload installs later.
         bridge.notify.emit("Language changed — applies to the next dictation.")
 
     tray = TrayApp(
