@@ -92,7 +92,7 @@ def test_uninstall_leaves_another_copy_s_startup_entry_alone(script):
     body = script[script.index("procedure RemoveStartupEntry"):]
     body = body[:body.index("procedure InitializeWizard")]
     assert "RegQueryStringValue" in body
-    assert re.search(r"if Pos\(Lowercase\(ExpandConstant\('\{app\}'\)\), "
+    assert re.search(r"if Pos\(Lowercase\(ExpandConstant\('\{app\}'\)\) \+ '\\', "
                      r"Lowercase\(Command\)\) = 0 then\s*\n\s*Exit;", body)
 
 
@@ -200,3 +200,18 @@ def test_the_wizard_images_the_script_references_exist(script):
 def test_the_setup_icon_is_the_committed_app_icon(script):
     assert _setting(script, "SetupIconFile") == r"..\assets\icon.ico"
     assert (REPO_ROOT / "assets" / "icon.ico").is_file()
+
+
+def test_uninstall_never_wildcard_deletes_the_install_dir(script):
+    """[UninstallDelete] must scope to _internal: a user who installs into a
+    folder that already holds other files keeps those files on uninstall."""
+    section = script.split("[UninstallDelete]")[1].split("[Code]")[0]
+    assert 'Name: "{app}\_internal"' in section
+    assert 'Type: dirifempty; Name: "{app}"' in section
+    assert 'filesandordirs; Name: "{app}"\n' not in section
+
+
+def test_run_value_removal_is_code_only_no_uninsdeletevalue(script):
+    # uninsdeletevalue would delete a portable copy's autostart that the [Code]
+    # guard deliberately preserves; removal must go through RemoveStartupEntry.
+    assert "uninsdeletevalue" not in script

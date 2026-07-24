@@ -651,3 +651,11 @@ def test_a_silent_check_announces_nothing_up_front(updater, github, monkeypatch)
     github.release = {"tag_name": f"v{INSTALLED}", "html_url": "https://example.test"}
     updater._check_for_updates(silent=True)
     assert updater.shown == []
+
+
+def test_a_parseable_but_non_dict_body_reads_as_unreachable(updater, github):
+    # An exotic proxy/rate-limit shape: valid JSON that isn't an object. Must
+    # fail soft like any network error, never kill the worker thread.
+    github.body = json.dumps(["not", "a", "release"]).encode("utf-8")
+    updater._fetch_latest()
+    assert _messages(updater) == ["Could not reach GitHub to check for updates."]

@@ -338,6 +338,13 @@ class TrayApp:
                     "Could not reach GitHub to check for updates.")
             return
 
+        if not isinstance(data, dict):
+            log.warning("update check failed: unexpected response shape")
+            if not silent:
+                self._sig.toast.emit(
+                    "Could not reach GitHub to check for updates.")
+            return
+
         tag = (data.get("tag_name") or "").strip()
         page = (data.get("html_url") or "").strip() or RELEASES_PAGE.format(slug=slug)
         latest = parse_version(tag)

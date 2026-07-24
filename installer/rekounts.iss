@@ -132,21 +132,24 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; AppUserModelI
 [Registry]
 ; The app's own launch-at-login entry, written in the app's own format (a quoted
 ; absolute path to the exe — see startup.default_command for a frozen build).
-; uninsdeletevalue covers the case where the installer created it; the [Code]
-; below also removes it when the APP created it, which Inno cannot know about.
+; Removal on uninstall is handled ONLY by RemoveStartupEntry in [Code], which
+; guards against deleting a portable copy's autostart that points elsewhere.
 Root: HKCU; Subkey: "{#RunKey}"; ValueType: string; ValueName: "{#RunValueName}"; \
-    ValueData: """{app}\{#AppExeName}"""; Flags: uninsdeletevalue; Tasks: startupentry
+    ValueData: """{app}\{#AppExeName}"""; Tasks: startupentry
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; \
     Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; Only the install directory. Python writes __pycache__ folders next to the
-; bundled modules at runtime, and those are not in [Files], so without this the
-; uninstaller leaves a skeleton of empty directories behind. Nothing here points
-; anywhere near %APPDATA%.
-Type: filesandordirs; Name: "{app}"
+; Python writes __pycache__ folders under the bundle at runtime, and those are
+; not in [Files], so without this the uninstaller leaves a skeleton of empty
+; directories behind. Scoped to _internal (PyInstaller keeps everything except
+; the exe there): a user who installed into a folder that already held other
+; files keeps those files — never wildcard-delete {app} itself. Nothing here
+; points anywhere near %APPDATA%.
+Type: filesandordirs; Name: "{app}\_internal"
+Type: dirifempty; Name: "{app}"
 
 [Code]
 var
@@ -187,7 +190,7 @@ begin
   if not RegQueryStringValue(HKEY_CURRENT_USER, '{#RunKey}', '{#RunValueName}',
                              Command) then
     Exit;
-  if Pos(Lowercase(ExpandConstant('{app}')), Lowercase(Command)) = 0 then
+  if Pos(Lowercase(ExpandConstant('{app}')) + '', Lowercase(Command)) = 0 then
     Exit;
   RegDeleteValue(HKEY_CURRENT_USER, '{#RunKey}', '{#RunValueName}');
   RegDeleteValue(HKEY_CURRENT_USER, '{#StartupApproved}', '{#RunValueName}');
@@ -203,7 +206,7 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if (CurStep = ssPostInstall) and IsTaskSelected('startupentry') then
+  if (CurStep = ssPostInstall) and WizardIsTaskSelected('startupentry') then
     ClearStartupApproval;
 end;
 
