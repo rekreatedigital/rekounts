@@ -173,9 +173,18 @@ def install_crash_handlers(crash_path=None):
         # user reports the problem after restarting, not before.
         if path.exists() and path.stat().st_size > _MAX_CRASH_LOG_BYTES:
             path.unlink()
-        _crash_file = open(path, "a", encoding="utf-8",
-                           errors="backslashreplace")
+        opened = open(path, "a", encoding="utf-8", errors="backslashreplace")
+        # Only after the new file is open and faulthandler has been pointed at
+        # it: closing the old one first would leave a window where a crash had
+        # nowhere to go. Production calls this once; tests call it repeatedly,
+        # and on Windows a leaked handle keeps the temp directory locked.
+        previous_file, _crash_file = _crash_file, opened
         faulthandler.enable(file=_crash_file, all_threads=True)
+        if previous_file is not None:
+            try:
+                previous_file.close()
+            except Exception:
+                pass
         return True
     except Exception:
         # Losing native-crash capture is an annoyance; refusing to start over it
