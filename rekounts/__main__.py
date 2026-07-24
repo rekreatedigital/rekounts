@@ -344,7 +344,13 @@ def _report_missing_permissions(notify):
 
 
 def _hotkey_label(cfg) -> str:
-    return (cfg.get("hotkey") or "").upper()
+    """The pill's hotkey caption. 'ctrl+win' -> 'CTRL+WIN', or 'CTRL+CMD' on a
+    Mac, where the config's "win" token IS the Command key (see the platform
+    note in rekounts/hotkey_manager.py). Imported here rather than at module top
+    only to keep the "no rekounts.ui at import time" rule above unbroken —
+    platform_text itself imports nothing but sys, so it is Qt-free."""
+    from rekounts.ui.platform_text import hotkey_label
+    return hotkey_label(cfg.get("hotkey"))
 
 
 class _NullSounds:
