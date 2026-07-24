@@ -145,7 +145,8 @@ class TrayApp:
     def __init__(self, app, on_open_settings, on_quit,
                  on_open_dashboard=None, on_check_updates=None, on_help=None,
                  config=None, on_mic_changed=None, on_language_changed=None,
-                 languages=None, notifications_enabled=None):
+                 languages=None, notifications_enabled=None,
+                 on_open_scratchpad=None, scratchpad_enabled=None):
         """
         Backward-compatible: only the first three args are required.
 
@@ -158,6 +159,8 @@ class TrayApp:
           on_check_updates()           -> override the default GitHub check
           on_help()                    -> override the default (open repo in browser)
           notifications_enabled()      -> live gate for EVERY toast (see notify())
+          on_open_scratchpad()         -> open the sticky note
+          scratchpad_enabled()         -> live gate for the Scratchpad entry
         """
         self.app = app
         self.config = config
@@ -188,6 +191,20 @@ class TrayApp:
         if on_open_dashboard:
             open_dash = menu.addAction("Open Dashboard")
             open_dash.triggered.connect(on_open_dashboard)
+
+        # The Scratchpad entry exists whenever the pad is wired, but its
+        # visibility is re-read from the live gate every time the menu opens —
+        # the Settings switch applies instantly everywhere else in the app, and
+        # a tray menu that needed a restart to catch up would be the one place
+        # it didn't.
+        self._scratchpad_action = None
+        self._scratchpad_enabled = scratchpad_enabled or (lambda: True)
+        if on_open_scratchpad:
+            self._scratchpad_action = menu.addAction("Open Scratchpad")
+            self._scratchpad_action.triggered.connect(
+                lambda _checked=False: on_open_scratchpad())
+            menu.aboutToShow.connect(self._refresh_scratchpad_action)
+            self._refresh_scratchpad_action()
 
         menu.addAction("Settings…", on_open_settings)
 
@@ -233,6 +250,21 @@ class TrayApp:
             self._auto_timer.start(AUTO_CHECK_DELAY_MS)
 
     # ----------------------------------------------------------- submenus
+    def _refresh_scratchpad_action(self):
+        """Show/hide the Scratchpad entry from the live setting.
+
+        Anything unexpected leaves the entry visible: a broken gate must not be
+        able to hide the only way the user has to reach their notes.
+        """
+        if self._scratchpad_action is None:
+            return
+        try:
+            enabled = bool(self._scratchpad_enabled())
+        except Exception:
+            log.debug("could not read the scratchpad setting; showing the entry")
+            enabled = True
+        self._scratchpad_action.setVisible(enabled)
+
     def _refresh_microphone_menu(self):
         """Rebuild the Microphone submenu from the live device list.
 

@@ -847,6 +847,13 @@ class SettingsPage(QtWidgets.QWidget):
         sec.add(SettingsRow("Show dictation pill", self.show_pill,
                             "The small recording indicator at the bottom of the screen."))
 
+        self.scratchpad = self._switch("scratchpad_enabled")
+        sec.add(SettingsRow(
+            "Scratchpad", self.scratchpad,
+            "A floating sticky note you can dictate into — open it from the "
+            "tray menu. Dictation lands in the note while it is the focused "
+            "window, and goes to whatever app you are in otherwise."))
+
         self.notifications = self._switch("show_notifications")
         sec.add(SettingsRow("Tray notifications", self.notifications,
                             "Messages like “Settings applied.” and error reports."))

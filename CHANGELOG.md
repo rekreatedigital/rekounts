@@ -66,6 +66,27 @@ a **toot**: shorter, lower, and about **half as loud**.
   than falling back to `winsound.Beep` — a fixed, full-volume square wave with
   no volume control, which is the opposite of what this release is for.
 
+### The Scratchpad
+
+Dictating a quick note used to mean opening Notepad first to catch it. Now
+**Open Scratchpad** in the tray menu gives you a floating sticky note that is
+already listening.
+
+- Dictation lands in the note **while the note is the focused window**, and goes
+  to whatever app you are in otherwise — the same "text goes where the cursor
+  is" rule, with the note as one more place the cursor can be. The text is
+  written straight into the note rather than pasted, so your clipboard is never
+  touched.
+- Edit it like any note, and format it from the strip along the bottom: bold,
+  italic, underline, strikethrough and bullets. Dictated text arrives as plain
+  text in whatever formatting the cursor is already in.
+- Your text, size and position all survive closing the note and restarting the
+  app. Closing hides it; nothing is ever deleted.
+- No title bar: drag it by any empty part of the note, resize it from any edge,
+  and close/minimize fade in only when the pointer is over it.
+- Switch the whole feature off in **Settings → System → Scratchpad**. The tray
+  entry disappears and the note is kept.
+
 ## [0.3.0] — 2026-07-24
 
 The first public release.

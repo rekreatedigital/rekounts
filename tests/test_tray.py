@@ -659,3 +659,49 @@ def test_a_parseable_but_non_dict_body_reads_as_unreachable(updater, github):
     github.body = json.dumps(["not", "a", "release"]).encode("utf-8")
     updater._fetch_latest()
     assert _messages(updater) == ["Could not reach GitHub to check for updates."]
+
+
+# ------------------------------------------------------------- scratchpad
+def _entry(t):
+    return next((a for a in t.menu.actions() if a.text() == "Open Scratchpad"), None)
+
+
+def test_no_scratchpad_entry_when_the_pad_is_not_wired(tray):
+    """Backward compatibility: an older caller gets the menu it always had."""
+    assert _entry(tray) is None
+
+
+def test_scratchpad_entry_opens_the_pad(app, config):
+    opened = []
+    t = TrayApp(app, lambda: None, lambda: None, config=config,
+                on_open_scratchpad=lambda: opened.append(True))
+    _entry(t).trigger()
+    assert opened == [True]
+
+
+def test_the_entry_hides_when_the_setting_is_off(app, config):
+    """Instant apply: flipping the switch must show in the very next open of
+    the menu, not at the next launch."""
+    config.set("scratchpad_enabled", True)
+    t = TrayApp(app, lambda: None, lambda: None, config=config,
+                on_open_scratchpad=lambda: None,
+                scratchpad_enabled=lambda: bool(config.get("scratchpad_enabled")))
+    assert _entry(t).isVisible()
+
+    config.set("scratchpad_enabled", False)
+    t.menu.aboutToShow.emit()
+    assert not _entry(t).isVisible()
+
+    config.set("scratchpad_enabled", True)
+    t.menu.aboutToShow.emit()
+    assert _entry(t).isVisible()
+
+
+def test_a_broken_gate_leaves_the_entry_reachable(app, config):
+    """Failing closed would hide the only route the user has to their notes."""
+    def boom():
+        raise RuntimeError("no config")
+
+    t = TrayApp(app, lambda: None, lambda: None, config=config,
+                on_open_scratchpad=lambda: None, scratchpad_enabled=boom)
+    assert _entry(t).isVisible()

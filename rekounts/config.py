@@ -111,6 +111,12 @@ DEFAULTS = {
     # tray asks GitHub for the newest RELEASE once, ~10s after launch, and stays
     # quiet unless there is actually a newer version. See rekounts/ui/tray.py.
     "auto_check_updates": False,
+    # --- scratchpad (feat/scratchpad) ---
+    # The floating sticky note you can dictate into, opened from the tray menu.
+    # ON by default, but nothing appears on screen until the user opens it — the
+    # setting only decides whether the tray offers it at all. Turning it off
+    # hides an open pad (its text is kept; see rekounts/scratchpad_store.py).
+    "scratchpad_enabled": True,
 }
 
 # The previous push-to-talk default. Configs still on this value are upgraded to

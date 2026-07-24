@@ -70,6 +70,17 @@ def history_path() -> Path:
     return app_data_dir() / "history.db"
 
 
+def scratchpad_path() -> Path:
+    """The sticky note's saved contents and window geometry.
+
+    Its own file rather than a key in config.json: the note is user *content*
+    that saves on every pause in typing, and config.json is rewritten wholesale
+    by every settings change. Keeping them apart means a note save can never
+    race a settings save and lose one of them.
+    """
+    return app_data_dir() / "scratchpad.json"
+
+
 def models_dir() -> Path:
     """Where downloaded speech models are installed — the app's OWN directory,
     never the shared Hugging Face cache. One subfolder per model name."""
