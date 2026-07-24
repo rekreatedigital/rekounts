@@ -174,6 +174,40 @@ def test_wheel_up_scrolls_back(page):
     assert bar.value() < bar.maximum()
 
 
+def test_a_real_propagating_wheel_scrolls_exactly_one_notch(page):
+    """The path a wheel takes on the user's actual desk, walked by hand.
+
+    A synthesised event is delivered to one widget and stops there; a real one
+    is spontaneous, so Qt keeps offering it to each parent in turn until someone
+    accepts. That second path is the one that can double-scroll — the guard
+    delivers the notch to the scroll area itself, and if it then let the event
+    travel on, Qt would hand the very same notch to that same scroll area again.
+
+    So: replay Qt's walk. The page must move by exactly one notch, not two.
+    """
+    area = scroll_area(page)
+    bar = area.verticalScrollBar()
+    bar.setValue(0)
+    viewport = area.viewport()
+    QtWidgets.QApplication.sendEvent(viewport, wheel(viewport, NOTCH_DOWN))
+    one_notch = bar.value()
+    assert one_notch > 0
+
+    bar.setValue(0)
+    widget, event = page.device, wheel(page.device, NOTCH_DOWN)
+    while widget is not None:                   # Qt's spontaneous-wheel walk
+        event.ignore()
+        QtWidgets.QApplication.sendEvent(widget, event)
+        if event.isAccepted() or widget.isWindow():
+            break
+        widget = widget.parentWidget()
+    QtWidgets.QApplication.instance().processEvents()
+
+    assert bar.value() == one_notch, (
+        f"the page moved {bar.value()}px for one notch, expected {one_notch}px")
+    assert page.cfg.get("device") == "cpu"      # and still changed nothing
+
+
 def test_one_notch_scrolls_the_page_exactly_once(page):
     """Delivering the event ourselves must not double up with Qt's own walk."""
     bar = scroll_area(page).verticalScrollBar()
