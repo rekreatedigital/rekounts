@@ -318,6 +318,14 @@ def _cuda_loads_safely(model_name: str) -> bool:
 
 
 class Transcriber:
+    # Class-level defaults, so the live-settings providers are safe to read on
+    # ANY instance — including ones built with object.__new__ (the test suites
+    # do this to skip loading a real model) and any left over from an older
+    # build. A missing provider must degrade to the plain attribute, never blow
+    # up a transcription.
+    language_provider = None
+    beam_size_provider = None
+
     def __init__(self, model_name="small", device="auto", language="en", beam_size=5,
                  hotwords_provider=None, language_provider=None,
                  beam_size_provider=None):
