@@ -19,6 +19,10 @@ _INSERT_FAILURE_TOKENS = frozenset({
     # UIPI: the target window is elevated and rejected the injection — the text
     # never landed, so it must count as not-inserted (history is the safety net).
     "blocked",
+    # Keystroke delivery stopped part-way because a physical modifier stayed
+    # held. Some of the text may have landed, but not the message, so the user
+    # gets the clipboard copy and the notice rather than a silent half-sentence.
+    "interrupted",
 })
 
 

@@ -8,6 +8,7 @@ constructs and reports a plausible outcome.
 """
 
 import sys
+import time
 
 import pytest
 
@@ -15,6 +16,7 @@ from rekounts.text_inserter import (
     InsertResult,
     TextInserter,
     _NullBackend,
+    _WaitBudget,
 )
 
 
@@ -37,6 +39,14 @@ class FakeBackend:
 
         self.type_complete = True   # flip to False to simulate a focus change
         self.should_continue = None
+        # How many SendInput-style chunks type_unicode should pretend to send.
+        # >1 makes it consult should_continue BETWEEN chunks, exactly as the
+        # real Win32/mac backends do (never before the first one).
+        self.chunks = 1
+        self.gate_calls = 0
+        # True keeps modifiers_down() True forever, whatever modifier_sequence
+        # says — a finger resting on Alt.
+        self.modifiers_stuck = False
         self.calls = []
         self.set_text = None
         self.restored = "UNSET"
@@ -58,6 +68,8 @@ class FakeBackend:
 
     # modifiers
     def modifiers_down(self):
+        if self.modifiers_stuck:
+            return True
         if self._mods:
             return self._mods.pop(0)
         return False
@@ -91,8 +103,14 @@ class FakeBackend:
         self.calls.append("type")
         self.typed.append(text)
         # Real backends report whether the whole message got delivered; the
-        # policy layer turns False into NO_TARGET + a clipboard fallback.
+        # policy layer turns False into an undelivered outcome + a clipboard
+        # fallback.
         self.should_continue = should_continue
+        if should_continue is not None:
+            for _ in range(self.chunks - 1):
+                self.gate_calls += 1
+                if not should_continue():
+                    return False
         return self.type_complete
 
 
@@ -386,6 +404,187 @@ def test_notice_omits_the_clipboard_when_parking_was_disabled():
                        clipboard_fallback=False)
     ins.insert("hello")
     assert "clipboard" not in notices[0].lower()
+
+
+# --------------------------------------------------------------------------
+# Live-typing increments (streaming=True) never touch the clipboard
+#
+# stream_loop fires every ~0.8s while the user speaks. Any clipboard write on
+# that path overwrites what the user had copied, repeatedly, with a word
+# fragment, and nothing puts it back.
+# --------------------------------------------------------------------------
+def _clipboard_calls(be):
+    return [c for c in be.calls if c in ("set_text", "backup", "restore", "paste")]
+
+
+def test_streaming_increment_never_touches_the_clipboard():
+    ins, be = make(mode="keystroke")
+    assert ins.insert(" and then", streaming=True) == InsertResult.TYPED
+    assert _clipboard_calls(be) == []
+    assert be.set_text is None
+
+
+def test_streaming_increment_is_not_parked_when_it_cannot_be_delivered():
+    # Focus on the desktop/taskbar mid-stream: master left the clipboard alone,
+    # and so must we — the words arrive again in the final transcript.
+    ins, be = make(mode="keystroke", no_target=True)
+    assert ins.insert(" and then", streaming=True) == InsertResult.NO_TARGET
+    assert _clipboard_calls(be) == []
+    assert ins.last_parked_on_clipboard is False
+
+
+def test_streaming_increment_is_not_parked_when_the_target_is_elevated():
+    ins, be = make(mode="keystroke", blocked=True)
+    assert ins.insert(" and then", streaming=True) == InsertResult.BLOCKED
+    assert _clipboard_calls(be) == []
+
+
+def test_streaming_increment_is_not_parked_when_injection_fails():
+    be = FakeBackend()
+
+    def boom(text, delay=0.0, should_continue=None):
+        raise RuntimeError("SendInput refused")
+
+    be.type_unicode = boom
+    ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
+                       backend=be)
+    assert ins.insert(" and then", streaming=True) == InsertResult.FAILED
+    assert _clipboard_calls(be) == []
+
+
+def test_long_streaming_increment_is_typed_not_pasted():
+    # A lagging tick, or a final_tail of everything streaming missed, is still
+    # an increment: it must not escalate to backup/set/Ctrl+V/restore.
+    ins, be = make(mode="keystroke")
+    assert ins.insert(LONG, streaming=True) == InsertResult.TYPED
+    assert be.typed == [LONG]
+    assert _clipboard_calls(be) == []
+
+
+def test_streaming_bypasses_paste_mode_entirely():
+    # Belt and braces: __main__ forces keystroke mode while live typing is on,
+    # but an increment must not paste even if that ever slipped.
+    ins, be = make(mode="paste")
+    assert ins.insert("hello", streaming=True) == InsertResult.TYPED
+    assert _clipboard_calls(be) == []
+
+
+def test_streaming_does_not_repeat_a_notice_every_tick():
+    notices = []
+    be = FakeBackend(no_target=True)
+    ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
+                       on_notice=notices.append, backend=be)
+    ins.insert("word", streaming=True)
+    ins.insert("word", streaming=True)
+    assert notices == []
+
+
+def test_the_final_transcript_still_gets_the_full_protected_path():
+    # streaming defaults to False, so the completed dictation keeps parking,
+    # notices, and the long-text escalation.
+    ins, be = make(mode="keystroke", no_target=True)
+    assert ins.insert("the whole transcript") == InsertResult.NO_TARGET
+    assert be.set_text == "the whole transcript"
+    assert ins.last_parked_on_clipboard is True
+
+
+def test_final_long_transcript_still_escalates_to_paste():
+    ins, be = make(mode="keystroke")
+    assert ins.insert(LONG) == InsertResult.PASTED
+    assert be.pastes == 1
+
+
+# --------------------------------------------------------------------------
+# Held modifiers stop the delivery instead of corrupting it
+# --------------------------------------------------------------------------
+def test_modifier_timeout_between_chunks_stops_the_delivery():
+    be = FakeBackend()
+    be.chunks = 4
+    be.modifiers_stuck = True
+    ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
+                       backend=be)
+    assert ins.insert(SHORT) == InsertResult.INTERRUPTED
+
+
+def test_an_interrupted_delivery_parks_the_whole_text_and_says_so():
+    notices = []
+    be = FakeBackend()
+    be.chunks = 4
+    be.modifiers_stuck = True
+    ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
+                       on_notice=notices.append, backend=be)
+    ins.insert(SHORT)
+    assert be.set_text == SHORT
+    assert ins.last_parked_on_clipboard is True
+    assert "clipboard" in notices[0].lower()
+
+
+def test_released_modifiers_let_the_delivery_finish():
+    # The wait is only fatal when it runs out; a normal press/release resumes.
+    be = FakeBackend(modifier_sequence=[True, True, False])
+    be.chunks = 4
+    ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=1.0,
+                       backend=be)
+    assert ins.insert(SHORT) == InsertResult.TYPED
+    assert be.gate_calls == 3
+
+
+def test_a_focus_change_between_chunks_still_reports_no_target():
+    # capture, then _guard's re-read, then the between-chunk re-read finds 999
+    be = FakeBackend(foreground_sequence=[100, 100, 999])
+    be.chunks = 4
+    ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
+                       backend=be)
+    assert ins.insert(SHORT) == InsertResult.NO_TARGET
+
+
+def test_guard_still_proceeds_when_modifiers_never_lift():
+    # Hold-to-talk means modifiers ARE down when a dictation ends. The initial
+    # wait must not refuse to deliver, or the feature stops working.
+    be = FakeBackend()
+    be.modifiers_stuck = True
+    ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
+                       backend=be)
+    assert ins.insert(SHORT) == InsertResult.TYPED
+
+
+# --------------------------------------------------------------------------
+# One delivery cannot stall for timeout x chunk-count
+#
+# macOS posts 20 UTF-16 units at a time, so a long transcript is dozens of
+# chunks; a per-chunk timeout would let a rested finger freeze the app for
+# minutes mid-sentence.
+# --------------------------------------------------------------------------
+def test_modifier_waits_share_one_pool_across_a_delivery():
+    be = FakeBackend()
+    be.modifiers_stuck = True
+    ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.1,
+                       backend=be)
+    budget = _WaitBudget(0.1)
+    started = time.monotonic()
+    for _ in range(30):
+        ins._wait_for_modifiers(budget)
+    # 30 waits against ONE 0.1s pool, not 30 x 0.1s.
+    assert time.monotonic() - started < 1.0
+
+
+def test_a_many_chunk_delivery_with_stuck_modifiers_returns_promptly():
+    be = FakeBackend()
+    be.chunks = 60
+    be.modifiers_stuck = True
+    ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.1,
+                       backend=be, long_text_via_paste=False)
+    started = time.monotonic()
+    assert ins.insert("z" * 1200) == InsertResult.INTERRUPTED
+    # _guard's own wait (0.1s) plus the shared between-chunk pool (0.1s),
+    # nowhere near 60 x 0.1s.
+    assert time.monotonic() - started < 1.5
+
+
+def test_wait_budget_never_goes_negative():
+    b = _WaitBudget(0.05)
+    b.spend(10.0)
+    assert b.remaining == 0.0
 
 
 # --------------------------------------------------------------------------

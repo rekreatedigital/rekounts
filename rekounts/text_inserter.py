@@ -63,9 +63,39 @@ defect, not the call granularity.
 A clipboard paste has no such gap: the target pulls the entire string in one
 operation, so it is all-or-nothing by construction. The same abuse that
 destroyed most of the message leaves a pasted transcript byte-exact. Hence
-:data:`_KEYSTROKE_SAFE_CHARS`: short text (live typing's word-by-word
-increments) is still typed literally, and anything longer is handed over via
-the clipboard, falling back to typing if the target refuses a paste.
+:data:`_KEYSTROKE_SAFE_CHARS`: short text (brief phrases) is still typed
+literally, and anything longer is handed over via the clipboard, falling back
+to typing only if the clipboard/paste calls themselves raise. Users whose app
+ignores Ctrl+V can turn the escalation off entirely (``long_text_via_paste`` /
+the "Use paste for long dictations" setting).
+
+Live-typing increments never touch the clipboard
+------------------------------------------------
+``insert(..., streaming=True)`` marks a call as one live-typing increment — a
+word or two appended while the user is still speaking, re-sent every ~0.8s.
+Increments are ALWAYS typed literally: they skip paste mode, they skip the
+long-text escalation above, and they never park undelivered text. Borrowing the
+clipboard once per tick would silently overwrite whatever the user had copied,
+over and over, and there is nothing to gain by it — the complete transcript is
+inserted again on release, through the full protected path, and History holds it
+either way.
+
+Whether a paste actually landed cannot be verified
+--------------------------------------------------
+:attr:`InsertResult.PASTED` means "the clipboard was set and Ctrl+V was
+delivered to the target", NOT "the target inserted the text". Windows exposes no
+sound signal for the latter, and none of the candidates survives scrutiny:
+
+  * There is no API that reports whether an app acted on WM_PASTE / Ctrl+V.
+  * Delayed clipboard rendering (SetClipboardData with a NULL handle and a
+    WM_RENDERFORMAT handler) proves only that SOMEBODY read the clipboard —
+    every clipboard-history tool on the machine does, so it false-positives.
+  * Diffing the target's text through UI Automation needs COM, can block, and
+    is unavailable for exactly the surfaces (browsers, Electron, terminals)
+    where paste refusal actually happens.
+
+We therefore do not guess. Keystroke mode exists for paste-refusing apps, and
+``long_text_via_paste=False`` keeps it literal for long dictations too.
 
 "Is a text field focused?" — decision & limits
 ----------------------------------------------
@@ -97,10 +127,11 @@ class InsertResult(str, Enum):
     ``str`` subclass so ``result == "pasted"`` works and history can store it raw.
     """
 
-    PASTED = "pasted"        # text placed via clipboard paste
+    PASTED = "pasted"        # Ctrl+V delivered to the target (see _do_paste caveat)
     TYPED = "typed"          # text sent via synthesized keystrokes
     NO_TARGET = "no_target"  # no text surface focused / focus changed
     BLOCKED = "blocked"      # target is elevated (admin) — UIPI blocks injection
+    INTERRUPTED = "interrupted"  # typing stopped mid-way: modifiers stayed held
     FAILED = "failed"        # an unexpected error prevented insertion
     SKIPPED = "skipped"      # nothing to insert (empty text)
 
@@ -114,6 +145,7 @@ class InsertResult(str, Enum):
 _UNDELIVERED = frozenset({
     InsertResult.NO_TARGET,
     InsertResult.BLOCKED,
+    InsertResult.INTERRUPTED,
     InsertResult.FAILED,
 })
 
@@ -856,6 +888,24 @@ def _make_backend():
 # ---------------------------------------------------------------------------
 # Policy
 # ---------------------------------------------------------------------------
+class _WaitBudget:
+    """Seconds one delivery may spend waiting for physical modifiers to lift.
+
+    Shared by every between-chunk wait of a single insertion so they draw from
+    one pool. Without it a chunked backend multiplies the timeout by the chunk
+    count, and a user resting a finger on Alt could freeze a long delivery for
+    minutes.
+    """
+
+    __slots__ = ("remaining",)
+
+    def __init__(self, seconds):
+        self.remaining = seconds
+
+    def spend(self, seconds):
+        self.remaining = max(0.0, self.remaining - seconds)
+
+
 class TextInserter:
     """Insert transcribed text into the focused application.
 
@@ -884,7 +934,10 @@ class TextInserter:
         In ``"keystroke"`` mode, deliver text longer than
         ``_KEYSTROKE_SAFE_CHARS`` through the clipboard instead, because
         synthesized keystrokes cannot deliver a long transcript intact. Set
-        False to force literal keystrokes at the documented cost.
+        False to force literal keystrokes at the documented cost. Backed by the
+        config key of the same name (Settings ▸ Behavior ▸ "Use paste for long
+        dictations") so users whose app ignores Ctrl+V have a real escape
+        hatch. Never applies to ``streaming=True`` increments.
     clipboard_fallback:
         When the text cannot be delivered (nothing editable focused, an elevated
         window, or an injection failure), leave it on the clipboard so the user
@@ -927,19 +980,36 @@ class TextInserter:
         """
         return self.backend.foreground_window()
 
-    def insert(self, text: str, target=None) -> InsertResult:
+    def insert(self, text: str, target=None, *, streaming=False) -> InsertResult:
         """Insert ``text``; return an :class:`InsertResult` describing the outcome.
 
         ``target`` — optional expected foreground window. Defaults to whatever
         is focused right now, which is what the product promises: the transcript
         goes wherever the cursor is when dictation ENDS, no matter which app the
         user wandered through while speaking.
+
+        ``streaming`` — this call is one live-typing INCREMENT (a word or two
+        appended mid-utterance), not a finished dictation. Increments are typed
+        literally and never touch the clipboard: no paste mode, no long-text
+        escalation, no parking, no per-tick notice. See the module docstring for
+        why. Callers that are delivering the complete transcript must leave this
+        False so the full protected path applies.
         """
         self.last_parked_on_clipboard = False
         if not text:
             return InsertResult.SKIPPED
 
         expected = target if target is not None else self.backend.foreground_window()
+
+        if streaming:
+            # Explicit, not inferred: length and global state both lie (a
+            # lagging tick or a long final_tail is still an increment, and a
+            # short final transcript still deserves the clipboard fallback).
+            try:
+                return self._do_type(text, expected)
+            except Exception as e:
+                log.warning("live-typing increment failed: %s", e)
+                return InsertResult.FAILED
 
         if self.mode == "keystroke":
             result = self._do_keystroke(text, expected)
@@ -958,16 +1028,35 @@ class TextInserter:
         return self._notify(result)
 
     # -- internals ----------------------------------------------------------
-    def _wait_for_modifiers(self):
-        """Block until physical modifiers are released, or the timeout elapses."""
-        deadline = time.monotonic() + self.modifier_timeout
+    def _wait_for_modifiers(self, budget=None):
+        """Block until physical modifiers are released, or the wait runs out.
+
+        Returns True if they came up, False if the wait was cut short. Whether
+        False is fatal is the caller's decision: :meth:`_guard` proceeds anyway
+        (hold-to-talk means modifiers are legitimately down when a dictation
+        ends, and refusing to deliver then would break the feature), while
+        :meth:`_ready_for_next_chunk` aborts, because continuing there is what
+        turns the rest of a message into WM_SYSCHAR.
+
+        ``budget`` — optional :class:`_WaitBudget` shared across one delivery's
+        many between-chunk waits, so they draw down a single pool instead of
+        each getting a fresh ``modifier_timeout``.
+        """
+        limit = self.modifier_timeout
+        if budget is not None:
+            limit = min(limit, budget.remaining)
+        started = time.monotonic()
+        deadline = started + limit
+        released = True
         while self.backend.modifiers_down():
             if time.monotonic() >= deadline:
-                log.warning("modifiers still held after %.1fs; proceeding anyway",
-                            self.modifier_timeout)
-                return False
+                log.warning("modifiers still held after %.2fs of waiting", limit)
+                released = False
+                break
             time.sleep(0.01)
-        return True
+        if budget is not None:
+            budget.spend(time.monotonic() - started)
+        return released
 
     def _guard(self, expected):
         """Return an InsertResult to abort with, or None to proceed.
@@ -993,11 +1082,19 @@ class TextInserter:
         Long text goes out via the clipboard because keystroke synthesis
         provably cannot deliver it intact (see ``_KEYSTROKE_SAFE_CHARS``). The
         user's choice of keystroke mode is still honoured wherever it can be
-        honoured safely — short text — and if pasting fails for the reason
-        people usually pick keystroke mode in the first place (an app that
-        refuses Ctrl+V), we fall straight back to typing it.
+        honoured safely — short text — and if the clipboard or SendInput calls
+        RAISE we fall straight back to typing.
+
+        Note the limit honestly: an app that silently ignores Ctrl+V raises
+        nothing, and there is no way to detect it (see the module docstring), so
+        the fallback does not cover that case. Users in that situation should
+        turn ``long_text_via_paste`` off; the setting exists for them.
         """
         if self.long_text_via_paste and len(text) > _KEYSTROKE_SAFE_CHARS:
+            log.info("keystroke mode: %d chars is past the safe limit (%d), "
+                     "delivering via the clipboard instead; set "
+                     "long_text_via_paste=False to force literal typing",
+                     len(text), _KEYSTROKE_SAFE_CHARS)
             try:
                 return self._do_paste(text, expected)
             except Exception as e:
@@ -1006,6 +1103,15 @@ class TextInserter:
         return self._do_type(text, expected)
 
     def _do_paste(self, text, expected):
+        """Deliver via the clipboard. PASTED means "Ctrl+V was sent", no more.
+
+        There is no sound way to confirm the target acted on the paste — see
+        "Whether a paste actually landed cannot be verified" in the module
+        docstring for the options considered and why each is unsound. We do not
+        substitute a heuristic for a guarantee we do not have; keystroke mode
+        and ``long_text_via_paste=False`` are the honest answers for apps that
+        refuse Ctrl+V.
+        """
         abort = self._guard(expected)
         if abort is not None:
             return abort
@@ -1025,8 +1131,11 @@ class TextInserter:
             log.info("clipboard changed after paste; skipping restore to avoid clobber")
         return InsertResult.PASTED
 
-    def _ready_for_next_chunk(self, expected):
+    def _ready_for_next_chunk(self, expected, budget=None):
         """Gate between two SendInput calls: safe to commit more text?
+
+        Returns ``(ok, reason)`` — ``reason`` is the :class:`InsertResult` the
+        delivery should end with when ``ok`` is False.
 
         This is where the keystroke path actually earns its reliability. Sending
         one huge atomic array does not help (the queue drains against live
@@ -1035,27 +1144,47 @@ class TextInserter:
 
           * wait for physical modifiers to be released — the user re-pressing
             the dictation hotkey mid-insert is what turned the rest of the
-            message into WM_SYSCHAR and dropped it. Waiting means the message
-            resumes intact after they let go instead of being eaten.
+            message into WM_SYSCHAR and dropped it. If they come up in time the
+            message resumes intact; if the wait runs out we STOP rather than
+            send the rest into a modified keyboard state and corrupt it again.
           * confirm the foreground window is still the one we validated. If the
             user switched apps, we stop rather than spray the tail into
-            whatever they opened; the caller parks the full text on the
-            clipboard and says so.
+            whatever they opened.
+
+        Either way the caller parks the full text on the clipboard and says so,
+        so a stopped delivery costs the user a paste, not the dictation.
         """
-        self._wait_for_modifiers()
+        if not self._wait_for_modifiers(budget):
+            return False, InsertResult.INTERRUPTED
         hwnd = self.backend.foreground_window()
         if self.backend.is_no_target(hwnd):
-            return False
-        return expected is None or hwnd is None or hwnd == expected
+            return False, InsertResult.NO_TARGET
+        if expected is not None and hwnd is not None and hwnd != expected:
+            return False, InsertResult.NO_TARGET
+        return True, None
 
     def _do_type(self, text, expected):
         abort = self._guard(expected)
         if abort is not None:
             return abort
+        # ONE pool of waiting time for the whole delivery. Backends chunk (48
+        # chars per SendInput on Windows, 20 UTF-16 units per Quartz post on
+        # macOS), so a per-wait timeout would let a held modifier stall a long
+        # transcript for modifier_timeout x chunk-count — minutes of a frozen
+        # half-typed sentence. The pool counts time SPENT WAITING, not wall
+        # clock, so a long but unobstructed delivery never exhausts it.
+        budget = _WaitBudget(self.modifier_timeout)
+        stopped_by = []
+
+        def ready():
+            ok, reason = self._ready_for_next_chunk(expected, budget)
+            if not ok:
+                stopped_by.append(reason)
+            return ok
+
         try:
             complete = self.backend.type_unicode(
-                text, self.key_delay,
-                should_continue=lambda: self._ready_for_next_chunk(expected))
+                text, self.key_delay, should_continue=ready)
         except Exception as e:
             # SendInput refusing the array (UIPI, a stuck low-level hook) used
             # to escape insert() entirely; report it as an outcome so the text
@@ -1063,10 +1192,12 @@ class TextInserter:
             log.error("keystroke injection failed: %s", e)
             return InsertResult.FAILED
         if complete is False:
-            # Delivery stopped early because focus left the target. Whatever
-            # already landed stays, but the user is told and gets the whole
-            # transcript on the clipboard rather than a truncated sentence.
-            return InsertResult.NO_TARGET
+            # Delivery stopped early. Whatever already landed stays, but the
+            # user is told and gets the whole transcript on the clipboard
+            # rather than a truncated sentence.
+            log.warning("keystroke delivery stopped early (%s); the full text is "
+                        "preserved", stopped_by[0] if stopped_by else "no target")
+            return stopped_by[0] if stopped_by else InsertResult.NO_TARGET
         return InsertResult.TYPED
 
     def _park_on_clipboard(self, text):
@@ -1098,6 +1229,9 @@ class TextInserter:
                 InsertResult.BLOCKED:
                     "Can't type into an admin window — the transcript is on "
                     "your clipboard (and in History).",
+                InsertResult.INTERRUPTED:
+                    "Typing stopped — a key was still held down. The full "
+                    "transcript is on your clipboard (and in History).",
                 InsertResult.FAILED:
                     "Couldn't insert the dictated text — it's on your "
                     "clipboard (and in History).",
@@ -1109,6 +1243,9 @@ class TextInserter:
                 InsertResult.BLOCKED:
                     "Can't paste into an admin window. Run Rekounts as "
                     "administrator to dictate there.",
+                InsertResult.INTERRUPTED:
+                    "Typing stopped — a key was still held down. The rest is "
+                    "in History.",
                 InsertResult.FAILED:
                     "Couldn't insert the dictated text.",
             }.get(result)

@@ -218,6 +218,10 @@ def test_insertion_outcome_mapping_covers_full_inserter_vocabulary():
         InsertResult.TYPED: True,
         InsertResult.NO_TARGET: False,
         InsertResult.BLOCKED: False,
+        # Typing stopped part-way (a modifier stayed held). Some text may have
+        # landed but not the message, so it counts as not-inserted and the user
+        # gets the clipboard copy plus the notice.
+        InsertResult.INTERRUPTED: False,
         InsertResult.FAILED: False,
         InsertResult.SKIPPED: False,
     }
