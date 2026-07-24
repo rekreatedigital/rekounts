@@ -7,6 +7,36 @@ The version string lives in one place — `rekounts/__init__.py` — and
 everything else (`pyproject.toml`, the `.exe` file properties) reads it from
 there.
 
+## [Unreleased]
+
+### macOS: runnable from source, and honest about what is unverified
+
+The README said there was no macOS version. There has been one since 0.3.x —
+running from source — so it now says so, along with exactly how far it goes.
+Still **no macOS download**: an unverified app that silently does nothing
+because a permission was never granted is worse than no app.
+
+- New **[Running on macOS](README.md#running-on-macos)** section: setup, the
+  three permissions macOS requires and where each one lives, the known limits,
+  and the unknowns spelled out as unknowns.
+- The catch nobody expects, now prominent: running from source, macOS grants the
+  permissions to your **terminal**, not to Rekounts. You will look for
+  "Rekounts" in the Input Monitoring list and it will not be there.
+- **The Hub no longer tells Mac users about Windows.** Six explanations named
+  Windows out loud and were shown verbatim on macOS — the microphone default,
+  the long-dictation paste (which sends Cmd+V on a Mac, not Ctrl+V), the
+  pre-roll mic indicator, launch at login, the GPU row (there is no GPU path on
+  a Mac at all), and the dictation pill, which announced `CTRL+WIN` for a chord
+  the Mac keyboard calls Ctrl+Cmd.
+- Nothing changes for Windows users: every Windows string is byte-for-byte what
+  0.4.0 shipped, and there is a test that fails if that stops being true.
+
+Under the hood, for anyone thinking about picking this up: CI now has a leg that
+installs the real mac dependency set and executes the mac code paths instead of
+faking them, `assets/icon.icns` and `packaging/entitlements.plist` are written,
+and [docs/macos-one-hour.md](docs/macos-one-hour.md) is the ordered list of what
+to check first on a borrowed Mac.
+
 ## [0.4.0] — 2026-07-25
 
 ### Fixed: long dictations no longer arrive scrambled
