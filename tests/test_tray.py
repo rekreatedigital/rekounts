@@ -7,7 +7,8 @@ import os
 
 import pytest
 
-from rekounts.ui.tray import GITHUB_REPO, _origin_repo_slug, _resolve_repo_slug
+from rekounts.ui.tray import (GITHUB_REPO, _origin_repo_slug, _resolve_repo_slug,
+                              is_newer, parse_version)
 
 # ------------------------------------------------------------- update check
 def test_hardcoded_repo_slug_matches_the_origin_remote():
@@ -74,6 +75,43 @@ def test_git_failure_is_swallowed(monkeypatch):
     monkeypatch.setattr(subprocess, "run", boom)
     assert tray._origin_repo_slug() is None
     assert tray._resolve_repo_slug() == GITHUB_REPO
+
+
+# ------------------------------------------------------- release comparison
+@pytest.mark.parametrize("tag, expected", [
+    ("v0.3.0", (0, 3, 0)),
+    ("0.3.0", (0, 3, 0)),
+    ("V1.10.2", (1, 10, 2)),
+    ("  v2.0  ", (2, 0)),
+    ("v1.2.3-rc1", (1, 2, 3)),      # suffix ignored, not ordered
+    ("1", (1,)),
+    ("nightly", None),
+    ("", None),
+    (None, None),
+    (0.3, None),                     # a JSON number where a tag was expected
+])
+def test_version_tags_are_parsed_or_refused(tag, expected):
+    assert parse_version(tag) == expected
+
+
+@pytest.mark.parametrize("candidate, current, expected", [
+    ("v0.4.0", "0.3.0", True),
+    ("v0.3.1", "0.3.0", True),
+    ("v1.0.0", "0.9.9", True),
+    ("v0.3.0", "0.3.0", False),
+    ("v0.2.0", "0.3.0", False),      # a yanked latest release must not "upgrade"
+    ("v0.4", "0.4.0", False),        # zero-padded, so these are the same version
+    ("v0.4.1", "0.4", True),
+    ("v0.10.0", "0.9.0", True),      # 10 > 9, not "1" > "9" as strings
+])
+def test_only_a_strictly_later_release_counts_as_newer(candidate, current, expected):
+    assert is_newer(parse_version(candidate), parse_version(current)) is expected
+
+
+def test_an_unparseable_version_is_never_newer():
+    # Better to say nothing than to nag about an upgrade that may not exist.
+    assert is_newer(None, (0, 3, 0)) is False
+    assert is_newer((0, 4, 0), None) is False
 
 
 # ------------------------------------------------------------ menu behavior
@@ -326,3 +364,290 @@ def test_a_broken_gate_still_shows_the_message(app, config, monkeypatch):
         assert shown == [("Rekounts", "must survive")]
     finally:
         t.tray.hide()
+
+
+# ------------------------------------------------- the update check, faked
+# The HTTP is faked at urllib, not at fetch_latest_release, so these also cover
+# the request headers, the JSON decode, and what happens to a malformed body.
+import json  # noqa: E402
+import urllib.request  # noqa: E402
+
+import rekounts.ui.tray as tray_mod  # noqa: E402
+
+INSTALLED = "0.3.0"     # pinned so a real version bump cannot rewrite these tests
+
+
+class _FakeResponse:
+    def __init__(self, body: bytes):
+        self._body = body
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+@pytest.fixture
+def github(monkeypatch):
+    """Stand in for api.github.com. Set .release, or .error to fail the call."""
+
+    class _Fake:
+        release = {"tag_name": "v0.3.0",
+                   "html_url": "https://github.com/rekreatedigital/rekounts/releases/tag/v0.3.0"}
+        error = None
+        body = None
+        requests = []
+
+        def urlopen(self, req, timeout=None):
+            self.requests.append(req)
+            if self.error:
+                raise self.error
+            payload = (self.body if self.body is not None
+                       else json.dumps(self.release).encode("utf-8"))
+            return _FakeResponse(payload)
+
+    fake = _Fake()
+    monkeypatch.setattr(urllib.request, "urlopen", fake.urlopen)
+    monkeypatch.setattr(tray_mod, "__version__", INSTALLED)
+    # Never shell out to git from these tests: the answer is the constant.
+    monkeypatch.setattr(tray_mod, "_resolve_repo_slug", lambda: GITHUB_REPO)
+    return fake
+
+
+@pytest.fixture
+def updater(app, config, monkeypatch, github):
+    """A TrayApp with its toasts spied on and the network faked."""
+    t = TrayApp(app, on_open_settings=lambda: None, on_quit=lambda: None,
+                config=config)
+    t.shown = []
+    monkeypatch.setattr(t.tray, "showMessage", lambda *a: t.shown.append(a))
+    yield t
+    t.tray.hide()
+
+
+def _messages(t):
+    return [message for _title, message in t.shown]
+
+
+def test_the_check_asks_for_the_latest_release_not_the_latest_commit(updater, github):
+    updater._fetch_latest()
+    [request] = github.requests
+    assert request.full_url == (
+        f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest")
+    assert "commits" not in request.full_url
+
+
+def test_the_request_identifies_itself_and_asks_for_the_api_media_type(updater,
+                                                                       github):
+    updater._fetch_latest()
+    [request] = github.requests
+    assert request.get_header("User-agent") == f"Rekounts/{INSTALLED}"
+    assert request.get_header("Accept") == "application/vnd.github+json"
+
+
+def test_a_newer_release_is_announced_with_both_versions(updater, github):
+    github.release = {"tag_name": "v0.4.0", "html_url": "https://example.test/rel"}
+    updater._fetch_latest()
+    [message] = _messages(updater)
+    assert "0.4.0" in message and INSTALLED in message
+
+
+def test_the_update_toast_is_clickable_and_opens_the_release_page(updater, github,
+                                                                  monkeypatch):
+    opened = []
+    monkeypatch.setattr(tray_mod.webbrowser, "open", opened.append)
+    # The click handler hands off to a thread; run it inline so the test is
+    # deterministic instead of racing a daemon thread.
+    monkeypatch.setattr(tray_mod.threading, "Thread",
+                        lambda target, args=(), daemon=None: _Inline(target, args))
+
+    github.release = {"tag_name": "v0.9.0", "html_url": "https://example.test/rel"}
+    updater._fetch_latest()
+    updater.tray.messageClicked.emit()
+
+    assert opened == ["https://example.test/rel"]
+
+
+class _Inline:
+    """A Thread stand-in that just runs the target when started."""
+
+    def __init__(self, target, args):
+        self._target, self._args = target, args
+
+    def start(self):
+        self._target(*self._args)
+
+
+def test_an_ordinary_toast_is_not_clickable(updater, monkeypatch):
+    opened = []
+    monkeypatch.setattr(tray_mod.webbrowser, "open", opened.append)
+
+    updater.notify("Settings applied.")
+    updater.tray.messageClicked.emit()
+
+    assert opened == []
+
+
+def test_a_stale_release_link_does_not_survive_the_next_toast(updater, github,
+                                                              monkeypatch):
+    opened = []
+    monkeypatch.setattr(tray_mod.webbrowser, "open", opened.append)
+
+    github.release = {"tag_name": "v0.9.0", "html_url": "https://example.test/rel"}
+    updater._fetch_latest()
+    updater.notify("Microphone set to system default.")   # a later, unrelated toast
+    updater.tray.messageClicked.emit()
+
+    assert opened == []
+
+
+def test_being_up_to_date_says_so_when_the_user_asked(updater, github):
+    github.release = {"tag_name": f"v{INSTALLED}", "html_url": "https://example.test"}
+    updater._fetch_latest()
+    [message] = _messages(updater)
+    assert "latest release" in message
+
+
+def test_an_older_release_than_the_installed_build_is_not_an_upgrade(updater,
+                                                                     github):
+    # e.g. running a build from master that is ahead of the last tag.
+    github.release = {"tag_name": "v0.1.0", "html_url": "https://example.test"}
+    updater._fetch_latest()
+    assert "available" not in " ".join(_messages(updater))
+
+
+def test_an_unparseable_tag_is_reported_rather_than_guessed_at(updater, github):
+    github.release = {"tag_name": "nightly", "html_url": "https://example.test"}
+    updater._fetch_latest()
+    [message] = _messages(updater)
+    assert "nightly" in message
+    assert "available" not in message
+
+
+def test_a_release_without_a_page_falls_back_to_the_releases_url(updater, github,
+                                                                 monkeypatch):
+    opened = []
+    monkeypatch.setattr(tray_mod.webbrowser, "open", opened.append)
+    monkeypatch.setattr(tray_mod.threading, "Thread",
+                        lambda target, args=(), daemon=None: _Inline(target, args))
+
+    github.release = {"tag_name": "v0.9.0"}          # html_url absent
+    updater._fetch_latest()
+    updater.tray.messageClicked.emit()
+
+    assert opened == [f"https://github.com/{GITHUB_REPO}/releases/latest"]
+
+
+def test_a_network_failure_is_reported_once_and_never_raises(updater, github):
+    github.error = OSError("no route to host")
+    updater._fetch_latest()
+    [message] = _messages(updater)
+    assert "Could not reach GitHub" in message
+
+
+def test_a_malformed_body_is_treated_like_any_other_failure(updater, github):
+    github.body = b"<html>rate limited</html>"
+    updater._fetch_latest()
+    [message] = _messages(updater)
+    assert "Could not reach GitHub" in message
+
+
+# --- the opt-in automatic check ---------------------------------------------
+def test_the_automatic_check_is_off_by_default(app, config, github):
+    t = TrayApp(app, on_open_settings=lambda: None, on_quit=lambda: None,
+                config=config)
+    try:
+        assert config.get("auto_check_updates") is False
+        assert t._auto_timer is None
+        assert github.requests == []      # nothing was fetched by constructing it
+    finally:
+        t.tray.hide()
+
+
+def test_switching_it_on_schedules_exactly_one_check(app, config, github):
+    config.set("auto_check_updates", True)
+    t = TrayApp(app, on_open_settings=lambda: None, on_quit=lambda: None,
+                config=config)
+    try:
+        assert t._auto_timer is not None
+        assert t._auto_timer.isSingleShot()
+        assert t._auto_timer.isActive()
+    finally:
+        t.tray.hide()
+
+
+def test_a_tray_without_config_never_checks_automatically(app, github):
+    t = TrayApp(app, on_open_settings=lambda: None, on_quit=lambda: None)
+    try:
+        assert t._auto_check_enabled() is False
+        assert t._auto_timer is None
+    finally:
+        t.tray.hide()
+
+
+def test_a_host_supplied_check_is_never_run_automatically(app, config, github):
+    """If the app replaced the manual check, we must not fire our own behind it."""
+    config.set("auto_check_updates", True)
+    t = TrayApp(app, on_open_settings=lambda: None, on_quit=lambda: None,
+                config=config, on_check_updates=lambda: None)
+    try:
+        assert t._auto_timer is None
+    finally:
+        t.tray.hide()
+
+
+def test_the_silent_check_says_nothing_when_there_is_no_update(updater, github):
+    github.release = {"tag_name": f"v{INSTALLED}", "html_url": "https://example.test"}
+    updater._fetch_latest(silent=True)
+    assert updater.shown == []
+
+
+def test_the_silent_check_says_nothing_when_the_network_is_down(updater, github):
+    github.error = OSError("offline")
+    updater._fetch_latest(silent=True)
+    assert updater.shown == []
+
+
+def test_the_silent_check_still_announces_a_real_update(updater, github):
+    github.release = {"tag_name": "v1.0.0", "html_url": "https://example.test/rel"}
+    updater._fetch_latest(silent=True)
+    [message] = _messages(updater)
+    assert "1.0.0" in message
+
+
+def test_clicking_the_menu_item_runs_a_loud_check(updater, github, monkeypatch):
+    """QAction.triggered passes `checked`, which must not land in `silent`.
+
+    Spied at _fetch_latest, the seam the real _check_for_updates resolves when it
+    is called — the menu action holds its handler from construction time, so
+    replacing _check_for_updates here would test nothing.
+    """
+    calls = []
+    monkeypatch.setattr(updater, "_fetch_latest", lambda silent=False: calls.append(silent))
+    monkeypatch.setattr(tray_mod.threading, "Thread",
+                        lambda target, args=(), daemon=None: _Inline(target, args))
+
+    [action] = [a for a in updater.menu.actions() if a.text() == "Check for Updates"]
+    action.trigger()
+
+    assert calls == [False]
+
+
+def test_a_loud_check_announces_itself_before_going_to_the_network(updater,
+                                                                   monkeypatch):
+    monkeypatch.setattr(tray_mod.threading, "Thread",
+                        lambda target, args=(), daemon=None: _Inline(target, args))
+    updater._check_for_updates()
+    assert "Checking GitHub" in _messages(updater)[0]
+
+
+def test_a_silent_check_announces_nothing_up_front(updater, github, monkeypatch):
+    monkeypatch.setattr(tray_mod.threading, "Thread",
+                        lambda target, args=(), daemon=None: _Inline(target, args))
+    github.release = {"tag_name": f"v{INSTALLED}", "html_url": "https://example.test"}
+    updater._check_for_updates(silent=True)
+    assert updater.shown == []

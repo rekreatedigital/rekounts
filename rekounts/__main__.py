@@ -645,6 +645,7 @@ def _run():
     # 2) Now it is safe to import and initialize Qt.
     from PySide6 import QtCore, QtWidgets
     from rekounts.languages import LANGUAGES
+    from rekounts.ui import branding
     from rekounts.ui.dashboard import Dashboard
     from rekounts.ui.overlay import Overlay
     from rekounts.ui.tray import TrayApp
@@ -673,6 +674,11 @@ def _run():
 
     app = QtWidgets.QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # keep running with only the tray
+    # Identity + icon, before any window exists. The AppUserModelID has to be set
+    # first: Windows reads it when a window is created, so setting it afterwards
+    # leaves the taskbar button showing python.exe's icon in a source run.
+    branding.set_app_user_model_id()
+    app.setWindowIcon(branding.app_icon())
 
     bridge = Bridge(notices)
 

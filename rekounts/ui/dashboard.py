@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from rekounts.ui import theme
+from rekounts.ui.branding import app_icon
 from rekounts.ui.settings_page import SettingsPage
 from rekounts.ui.theme import ACCENT, BORDER, TEXT, TEXT_3
 
@@ -532,6 +533,9 @@ class Dashboard(QtWidgets.QWidget):
         self.config = config
         self.setObjectName("DashRoot")
         self.setWindowTitle("Rekounts")
+        # Explicit, rather than relying on QApplication's default: the Hub is
+        # also opened standalone by tools/demos that never set an app-wide icon.
+        self.setWindowIcon(app_icon())
         self.setStyleSheet(_STYLE)
         self.resize(880, 620)
         self.setMinimumSize(720, 500)

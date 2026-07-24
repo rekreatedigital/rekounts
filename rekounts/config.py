@@ -93,6 +93,13 @@ DEFAULTS = {
     # Tray balloon notifications ("Settings applied.", mic changes, errors).
     # Persisted by the Hub; TrayApp.notify() is the intended consumer.
     "show_notifications": True,
+    # --- update check (feat/icon-installer-updates) ---
+    # OFF by default, and it must stay that way: docs/privacy.md promises that
+    # the app only reaches the network when you click something, so the one
+    # exception has to be a thing the user switched on themselves. When on, the
+    # tray asks GitHub for the newest RELEASE once, ~10s after launch, and stays
+    # quiet unless there is actually a newer version. See rekounts/ui/tray.py.
+    "auto_check_updates": False,
 }
 
 # The previous push-to-talk default. Configs still on this value are upgraded to

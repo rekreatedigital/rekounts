@@ -34,11 +34,27 @@ Everything lives in `%APPDATA%\Rekounts` (typically
 
 | `models\<name>\` | The downloaded speech model (~148 MB for `base`, ~486 MB for `small`, ~1.5 GB for `medium`). Four plain files per model — delete a folder to reclaim the space; it is re-downloaded only if you select that model again. |
 
-One thing lives outside that folder:
+A few things live outside that folder, and all of them belong to the *program*
+rather than to your data:
 
 | Where | What |
 | --- | --- |
-| `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Rekounts` | A per-user registry entry, only if you turn on **Launch at login** (Settings → System). |
+| `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Rekounts` | A per-user registry entry, only if you turn on **Launch at login** (Settings → System, or the matching checkbox in the installer — they are the same switch). |
+| `%LOCALAPPDATA%\Programs\Rekounts` | The program itself, if you used the installer. Nothing personal is kept here. (The portable ZIP puts the same files wherever you unzipped it.) |
+| Start Menu, and the Desktop if you asked for it | Shortcuts the installer created. |
+| `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\...` | The entry that makes Rekounts appear in **Settings → Apps**, so it can be uninstalled like anything else. |
+
+The installer is per-user throughout: it never asks for administrator rights,
+writes nothing outside your own account, and touches no system-wide location.
+
+### Uninstalling
+
+Uninstalling removes the program and the entries above — and stops there.
+**`%APPDATA%\Rekounts` is left exactly where it is**, so your settings, your
+dictation history and the speech model you downloaded survive an uninstall, a
+reinstall, and an upgrade. The uninstaller offers a checkbox to delete that
+folder too; it is unticked, and nothing deletes it unless you tick it yourself.
+You can of course also just delete the folder by hand at any time.
 
 ### If you used the app when it was called TalkativeAI
 
@@ -73,8 +89,9 @@ your Windows user profile can read these files, exactly like your documents.
 
 ## When the app touches the network
 
-Three times, all of them either one-off or triggered by you clicking something.
-There are no background pings, no update daemon, and no account server.
+Three times. Two of them are one-off or triggered by you clicking something; the
+third is a check you can switch on, which is off until you do. There are no
+background pings, no update daemon, and no account server.
 
 1. **Downloading the speech model — once, on first use of a model.**
    The first launch (and the first time you pick a different model size) fetches
@@ -98,10 +115,29 @@ There are no background pings, no update daemon, and no account server.
    straight from a folder on your disk with **zero network requests** — online or
    not. This is structural, not a setting: the app hands the speech engine a
    local directory path, so there is no code path left that could fetch anything.
-2. **Check for Updates — only when you click it.** Tray menu →
-   **Check for Updates** asks the public GitHub API for the newest commit on
-   this project and shows it in a notification. Unauthenticated, no account, and
-   it never runs on its own.
+2. **Check for Updates.** Tray menu → **Check for Updates** asks the public
+   GitHub API for this project's newest **release**:
+
+   ```
+   https://api.github.com/repos/rekreatedigital/rekounts/releases/latest
+   ```
+
+   It compares that release's version number with the one you are running and
+   shows the answer in a notification. Unauthenticated, no account, no query
+   string, and nothing about you is sent — the request carries no identifier
+   beyond a `User-Agent` of `Rekounts/<version>`, which GitHub requires. It
+   **downloads nothing and installs nothing**; if there is an update, clicking
+   the notification opens the release page in your browser and you take it from
+   there.
+
+   **By default this only happens when you click it.** There is one opt-in:
+   **Settings → System → Check for updates automatically**, which is **off**
+   until you turn it on. With it on, Rekounts makes that same single request
+   about ten seconds after each launch and says nothing at all unless there is
+   genuinely a newer release — no "you're up to date" toast, and nothing if you
+   are offline. Turning it back off stops it at the next launch. It is also
+   `"auto_check_updates": false` in `config.json` if you would rather set it
+   there.
 3. **Help — only when you click it.** Tray menu → **Help** opens this project's
    README in your normal web browser. That request is made by your browser, not
    by Rekounts.
