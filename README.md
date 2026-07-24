@@ -121,6 +121,7 @@ change this in Settings), and it warns you about 30 seconds before it does.
 Right-click the tray icon:
 
 - **Open Dashboard** — the Hub (below).
+- **Open Scratchpad** — the sticky note (below).
 - **Settings…** — jumps straight to the Hub's Settings page.
 - **Microphone** / **Language** — quick switches without opening Settings.
 - **Check for Updates** — asks GitHub whether there is a newer **release** than
@@ -132,6 +133,38 @@ Right-click the tray icon:
   nothing; you decide.
 - **Help** — opens this README in your browser.
 - **Quit**.
+
+## The Scratchpad
+
+<p align="center">
+  <img src="docs/img/scratchpad.png" width="380"
+       alt="The Scratchpad — a dark sticky note with a bulleted list and a formatting toolbar" />
+  <img src="docs/img/scratchpad-hover.png" width="380"
+       alt="The same note with the pointer over it — close and minimize faded in" />
+  <br /><em>At rest, and with the pointer over it</em>
+</p>
+
+Sometimes you just want to dictate a note, and opening Notepad to catch it is a
+step too many. **Open Scratchpad** from the tray gives you a floating note that
+is already listening.
+
+- **Dictation lands in the note while the note is focused.** Click into anything
+  else and dictation goes there instead, exactly as it always has — it is the
+  same rule you already know, and the pad is simply one more place your cursor
+  can be. Nothing goes through the clipboard on the way, so whatever you had
+  copied stays copied.
+- **It is a real note, not a transcript.** Edit it, and format it with the strip
+  along the bottom: **bold**, *italic*, underline, strikethrough and bullets.
+  Dictated text arrives as plain text in whatever formatting the cursor is
+  already in.
+- **It remembers.** Your text, its size and its position are all still there
+  next time you open it — and next time you start Rekounts.
+- **Minimal by design.** No title bar; drag it by any empty part of the note,
+  resize it from any edge. Close and minimize fade in only when your pointer is
+  over it. Closing hides the note, it never deletes it.
+
+Turn the whole feature off in **Settings → System → Scratchpad** and the tray
+entry disappears. Your note is kept either way.
 
 ## The Hub
 
@@ -250,6 +283,7 @@ beam width), `stream_model` (the model live typing uses) and
 | --- | --- |
 | Settings | `%APPDATA%\Rekounts\config.json` |
 | Dictation history + dictionary | `%APPDATA%\Rekounts\history.db` |
+| Scratchpad note | `%APPDATA%\Rekounts\scratchpad.json` |
 | Logs | `%APPDATA%\Rekounts\logs\rekounts.log` |
 | Speech models | `%APPDATA%\Rekounts\models\<name>\` |
 | The program itself (if you used the installer) | `%LOCALAPPDATA%\Programs\Rekounts` |

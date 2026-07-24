@@ -101,13 +101,15 @@ This replaced the old restart-on-save, which raced the single-instance mutex.
 | `startup.py` | Enable/disable/query **launch on login** (Windows `HKCU\...\Run` registry key, macOS `~/Library/LaunchAgents` plist); also purges the pre-rename `TalkativeAI` entry |
 | `paths.py` | Every per-user filesystem location in one place (`%APPDATA%\Rekounts` and its children), plus the pre-rename folder name |
 | `migrate.py` | One-time move of user state from `%APPDATA%\TalkativeAI` to `%APPDATA%\Rekounts`. Runs before logging and `Config()`, since both would otherwise create/read the new folder first. Marker-file completion, per-item atomic staging, copy-except-models, never overwrites, never deletes the old folder |
-| `ui/tray.py` | `TrayApp` — tray icon, menu (Dashboard, Settings, Microphone, Language, Check for Updates, Help, Quit), toasts, the GitHub release check |
+| `ui/tray.py` | `TrayApp` — tray icon, menu (Dashboard, Scratchpad, Settings, Microphone, Language, Check for Updates, Help, Quit), toasts, the GitHub release check |
 | `ui/branding.py` | Loads `assets/icon.ico` for the tray and every window, and sets the Windows AppUserModelID |
 | `ui/overlay.py` | `Overlay` — the frameless monochrome pill: idle / hover / recording (✕, waveform, ✓) / processing. Follows the monitor the mouse is on; never takes focus |
 | `sounds.py` | `Sounds` — non-blocking start/stop/error audio cues (stdlib `winsound`); silent when disabled |
 | `ui/dashboard.py` | `Dashboard` — the Hub, the app's one window: Dictation / Insights / Dictionary / Settings / Account |
 | `ui/settings_page.py` | `SettingsPage` — every setting, applied the instant you change it (no Save button, no restart) |
 | `ui/theme.py` | The single monochrome palette + stylesheet every Hub page shares |
+| `ui/scratchpad.py` | `Scratchpad` — the frameless sticky note: no title bar, hover-only close/minimize, bottom formatting toolbar, draggable and resizable. `ScratchpadRouter` sends a dictation here instead of to the focused app when the note itself is focused |
+| `scratchpad_store.py` | The note's text (Qt rich-text HTML) and window geometry, in `scratchpad.json`. Qt-free, so it is readable and testable without importing PySide6 |
 
 ## The hotkey engine
 
