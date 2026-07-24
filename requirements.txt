@@ -7,5 +7,16 @@ pyperclip==1.9.0
 # `pip install -r requirements.txt` working on Linux/macOS for development.
 # >=310 is required by the rekoll memory layer's MCP server sharing this venv.
 pywin32==312; sys_platform == 'win32'
+# macOS-only: the native seams of the port (paste synthesis via Quartz events,
+# NSPasteboard clipboard, NSWorkspace focus, permission preflights, overlay
+# NSPanel behavior). Quartz/ApplicationServices are already pynput's own darwin
+# deps (and Quartz pulls Cocoa/AppKit); they are pinned here explicitly so the
+# app never rides on a transitive dependency. AVFoundation is only for reading
+# microphone consent state (rekounts/permissions.py) — imported lazily, the app
+# degrades gracefully without it.
+pyobjc-framework-Quartz==11.1; sys_platform == 'darwin'
+pyobjc-framework-Cocoa==11.1; sys_platform == 'darwin'
+pyobjc-framework-ApplicationServices==11.1; sys_platform == 'darwin'
+pyobjc-framework-AVFoundation==11.1; sys_platform == 'darwin'
 PySide6==6.7.2
 pytest==8.2.2

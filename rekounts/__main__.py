@@ -1,5 +1,6 @@
 import inspect
 import logging
+import os
 import sys
 import threading
 import traceback
@@ -198,14 +199,41 @@ _MUTEX_NAME = "Rekounts_SingleInstance"
 _LEGACY_MUTEX_NAME = "TalkativeAI_SingleInstance"
 
 
+def _acquire_posix_lock(path):
+    """Hold an exclusive ``flock`` on ``path``; the open file IS the claim.
+
+    Returns the open file object while we are the first instance (the caller
+    must keep it referenced for the process lifetime — closing it releases the
+    lock), or None when another live process already holds it. Like the Windows
+    mutex, the kernel releases the lock automatically when the owner exits or
+    crashes, so a stale lock file left on disk never blocks the next launch.
+    """
+    import fcntl
+    path = str(path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    f = open(path, "a")
+    try:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return f
+    except OSError:
+        f.close()
+        return None
+
+
 def _acquire_single_instance():
-    """Return a Windows mutex handle if we're the first instance, else None.
+    """Return a truthy instance claim if we're the first instance, else None.
 
     Some launch paths (and this machine's --copies venv) can start the app twice;
-    two instances mean duplicate tray icons and fighting hotkey listeners. A named
-    mutex is atomic and auto-released when the owning process exits.
+    two instances mean duplicate tray icons and fighting hotkey listeners.
+    Windows: a named mutex (atomic, auto-released when the owner exits).
+    macOS/POSIX: an ``flock``-ed lock file in the app data folder (same
+    auto-release-on-exit property). The caller keeps the returned object
+    referenced for the process lifetime.
     """
     try:
+        if sys.platform != "win32":
+            from rekounts.paths import app_data_dir
+            return _acquire_posix_lock(app_data_dir() / ".rekounts.lock")
         import ctypes
         kernel32 = ctypes.windll.kernel32
         handle = kernel32.CreateMutexW(None, False, _MUTEX_NAME)
@@ -240,6 +268,25 @@ def _legacy_instance_running() -> bool:
         return True
     except Exception:
         return False   # a failed probe must never block startup
+
+
+def _report_missing_permissions(notify):
+    """Surface missing OS permissions as actionable notices (macOS).
+
+    On macOS the hotkey listener, the paste synthesis and the microphone each
+    sit behind a separate user consent (Input Monitoring / Accessibility /
+    Microphone), and the OS denies silently — no dialog, no error, the events
+    simply never arrive. Without this, a missing permission is
+    indistinguishable from a broken app. Elsewhere this is a no-op. Never
+    raises: a failed check must not stop startup.
+    """
+    try:
+        from rekounts.permissions import missing_permission_messages
+        for message in missing_permission_messages():
+            log.warning(message)
+            notify(message)
+    except Exception:
+        log.exception("permission check failed (non-fatal)")
 
 
 def _hotkey_label(cfg) -> str:
@@ -999,6 +1046,10 @@ def _run():
     # Task Manager disable (of the old name AND ours), and clear the pre-rename
     # entry. The full rules and their ordering live on _reconcile_startup.
     _reconcile_startup(cfg)
+
+    # macOS permission onboarding — after the tray is attached so the notices
+    # actually show as toasts rather than sitting in the buffer.
+    _report_missing_permissions(bridge.notify.emit)
 
     def cleanup():
         # Release the mic (pre-roll holds it open) and the history db cleanly.

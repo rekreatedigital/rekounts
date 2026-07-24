@@ -1,12 +1,13 @@
 """Subtle audio cues for dictation start / stop / error.
 
-Stdlib only, Windows-first: each cue is synthesized as a soft, low-amplitude
-sine wave and played straight from memory via ``winsound.PlaySound``
-(SND_MEMORY), so there is nothing to bundle, nothing to download, and no new
-dependency. A pure sine at low amplitude is the point — ``winsound.Beep`` can
-only emit a fixed, full-volume square wave (no volume parameter exists), which
-is exactly the harsh cue we are moving away from. Where in-memory playback is
-unavailable it falls back to ``Beep``, and failing that every cue is silent.
+Stdlib only: each cue is synthesized as a soft, low-amplitude sine wave and
+played via ``winsound.PlaySound`` straight from memory on Windows (SND_MEMORY)
+or via the stock ``afplay`` from a temp WAV on macOS — so there is nothing to
+bundle, nothing to download, and no new dependency. A pure sine at low
+amplitude is the point — ``winsound.Beep`` can only emit a fixed, full-volume
+square wave (no volume parameter exists), which is exactly the harsh cue we
+are moving away from. Where the preferred playback is unavailable each
+platform falls back (Windows: ``Beep``), and failing that every cue is silent.
 
 Wiring contract (this is what ``__main__`` calls)::
 
@@ -28,7 +29,11 @@ import array
 import io
 import logging
 import math
+import os
+import shutil
+import subprocess
 import sys
+import tempfile
 import threading
 import wave
 
@@ -141,6 +146,51 @@ class WinsoundBackend:
             self._winsound.Beep(int(freq), int(ms))
 
 
+class AfplayBackend:
+    """Plays cues on macOS via ``afplay``, the stock command-line audio player.
+
+    The same soft sine cues as :class:`SineBackend`, rendered once per cue to a
+    small WAV in a private temp directory and handed to ``afplay`` (present on
+    every macOS install — nothing to bundle, no new Python dependency, and no
+    permission involved: playback needs no consent, only recording does).
+
+    ``afplay`` blocks until the cue finishes, which preserves ``Sounds``'
+    one-cue-at-a-time ``_play_lock`` semantics exactly like the synchronous
+    ``winsound.PlaySound`` path. ``runner`` and ``which`` are injectable so
+    tests never spawn a process or require macOS.
+    """
+
+    def __init__(self, runner=None, which=None, sample_rate=_SAMPLE_RATE,
+                 amplitude=_AMPLITUDE):
+        which = which or shutil.which
+        if not which("afplay"):
+            raise RuntimeError("afplay not found on PATH")
+        self._runner = runner or self._run_afplay
+        self._sample_rate = sample_rate
+        self._amplitude = amplitude
+        self._cache = {}          # tones -> WAV file path; the 3 cues repeat
+        self._tmpdir = None       # created lazily, on the first actual cue
+
+    @staticmethod
+    def _run_afplay(path):
+        subprocess.run(["afplay", path], check=True, timeout=10,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def _cue_path(self, key):
+        path = self._cache.get(key)
+        if path is None or not os.path.exists(path):
+            if self._tmpdir is None:
+                self._tmpdir = tempfile.mkdtemp(prefix="rekounts-cues-")
+            path = os.path.join(self._tmpdir, "cue-%d.wav" % len(self._cache))
+            with open(path, "wb") as f:
+                f.write(render_wav(key, self._sample_rate, self._amplitude))
+            self._cache[key] = path
+        return path
+
+    def play(self, tones):
+        self._runner(self._cue_path(tuple(tones)))
+
+
 class NullBackend:
     """Used when no audio backend exists. Every cue is silence."""
 
@@ -151,13 +201,20 @@ class NullBackend:
 def default_backend():
     """The best backend available here — never raises, worst case it is silent.
 
-    Preference: soft in-memory sine (SineBackend) -> winsound.Beep
-    (WinsoundBackend) -> silence (NullBackend).
+    Preference, per platform:
+      * Windows (and anywhere stdlib winsound exists): soft in-memory sine
+        (SineBackend) -> winsound.Beep (WinsoundBackend) -> silence.
+      * macOS: the same soft sine rendered to a temp WAV and played by the
+        stock ``afplay`` (AfplayBackend) -> silence.
     """
-    for factory in (SineBackend, WinsoundBackend):
+    if sys.platform == "darwin":
+        factories = (AfplayBackend,)
+    else:
+        factories = (SineBackend, WinsoundBackend)
+    for factory in factories:
         try:
             return factory()
-        except Exception as e:  # non-Windows, or a stripped-down winsound
+        except Exception as e:  # missing player, or a stripped-down winsound
             log.info("audio backend %s unavailable (%s)", factory.__name__, e)
     log.info("no audio cue backend available; cues will be silent")
     return NullBackend()
