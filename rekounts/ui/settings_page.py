@@ -689,6 +689,14 @@ class SettingsPage(QtWidgets.QWidget):
             "Insert text by", self.insertion,
             "Keystrokes are slower but work in apps that block paste."))
 
+        self.long_text_via_paste = self._switch("long_text_via_paste")
+        sec.add(SettingsRow(
+            "Paste long dictations", self.long_text_via_paste,
+            "Keystroke mode only. Typed keystrokes can't deliver a long "
+            "transcript intact, so anything over ~100 characters goes via the "
+            "clipboard and the clipboard is put straight back. Turn off if "
+            "your app ignores Ctrl+V."))
+
         self.live_typing = self._switch("live_typing", self._sync_model_availability)
         sec.add(SettingsRow(
             "Live typing", self.live_typing,

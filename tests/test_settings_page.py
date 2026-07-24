@@ -82,6 +82,14 @@ def test_hedge_switch_is_wired_to_its_config_key(page, cfg):
     assert cfg.get("strip_discourse_fillers") is False
 
 
+def test_long_text_via_paste_switch_is_wired_to_its_config_key(page, cfg):
+    # The documented escape hatch for apps that silently ignore Ctrl+V — a
+    # refused paste is undetectable, so the user needs a way to force typing.
+    assert page.long_text_via_paste.isChecked() is True   # app default: on
+    page.long_text_via_paste.setChecked(False)
+    assert cfg.get("long_text_via_paste") is False
+
+
 def test_burst_of_changes_coalesces_into_one_apply(page):
     page.strip_fillers.setChecked(not page.strip_fillers.isChecked())
     page.auto_cap.setChecked(not page.auto_cap.isChecked())

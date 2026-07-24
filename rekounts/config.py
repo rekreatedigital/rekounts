@@ -44,6 +44,13 @@ DEFAULTS = {
     # strip_fillers is: clean text out of the box is the product.
     "strip_discourse_fillers": True,
     "insertion_mode": "paste",   # or "keystroke"
+    # Keystroke mode only. Synthesized keystrokes provably cannot deliver a long
+    # transcript intact (SendInput queues events that are dispatched against the
+    # live keyboard/focus state - see rekounts/text_inserter.py), so anything
+    # past ~100 characters is handed over via the clipboard, which is then put
+    # back. Turn OFF to always type literally: the escape hatch for apps that
+    # silently ignore Ctrl+V, where a paste cannot be detected as refused.
+    "long_text_via_paste": True,
     # Off by default: Whisper re-transcribes the whole growing buffer each tick and
     # freely rewrites earlier words, so chunk-append live typing produces doubled/
     # garbled text. Reliable behavior is to type clean text once, on release.
