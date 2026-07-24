@@ -11,7 +11,7 @@ Estimated time: ~45 minutes.
 ## 0. Setup (from source)
 
 ```sh
-git clone <repo> && cd talkativeAI
+git clone <repo> && cd rekounts
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python -m pytest -q          # expect: all green, 0 failures
