@@ -241,6 +241,9 @@ def test_set_enabled_toggles():
 # --- default_command formatting ---------------------------------------------
 
 def test_default_command_frozen(monkeypatch):
+    # default_command() quotes per-platform now (POSIX shlex on mac for the
+    # LaunchAgent round-trip); this asserts the WINDOWS shape, so pin it.
+    monkeypatch.setattr(startup.sys, "platform", "win32")
     monkeypatch.setattr(startup.sys, "frozen", True, raising=False)
     monkeypatch.setattr(startup.sys, "executable", r"C:\dist\Rekounts.exe",
                         raising=False)
@@ -258,6 +261,7 @@ def test_default_command_from_source_uses_launcher(monkeypatch, tmp_path):
     pkg_file.parent.mkdir()
     pkg_file.write_text("")
 
+    monkeypatch.setattr(startup.sys, "platform", "win32")   # Windows shape
     monkeypatch.setattr(startup.sys, "frozen", False, raising=False)
     monkeypatch.setattr(startup.sys, "executable", str(pythonw), raising=False)
     monkeypatch.setattr(startup.os.path, "abspath", lambda _p: str(pkg_file))

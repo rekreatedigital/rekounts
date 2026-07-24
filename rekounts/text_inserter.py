@@ -11,10 +11,11 @@ code that ignores the return keeps working and history can store it directly.
 
 Design notes / why this file is shaped this way
 ------------------------------------------------
-All platform-specific work lives behind a small backend object (:class:`_Win32Backend`
-on Windows, :class:`_NullBackend` elsewhere / on import failure). This keeps the
-policy in :class:`TextInserter` fully unit-testable with a fake backend, and lets a
-macOS backend slot in later without touching the policy code.
+All platform-specific work lives behind a small backend object
+(:class:`_Win32Backend` on Windows, :class:`_MacBackend` on macOS,
+:class:`_NullBackend` elsewhere / on import failure). This keeps the policy in
+:class:`TextInserter` fully unit-testable with a fake backend, and kept the
+macOS backend a pure slot-in with no policy changes.
 
 Robustness measures (each maps to an audited failure mode):
   * Clipboard backup/restore uses the native Win32 clipboard and preserves ALL
@@ -192,6 +193,192 @@ class _NullBackend:
         if self._kb is None:
             raise RuntimeError("no keyboard available")
         self._kb.type(text)
+
+
+# macOS virtual key codes (kVK_*, Carbon HIToolbox — stable hardware codes).
+_KVK_ANSI_V = 9
+_KVK_RETURN = 36
+# Left/right modifier keycodes, polled by modifiers_down(): a held push-to-talk
+# chord (e.g. Ctrl+Cmd) would otherwise turn the synthesized Cmd+V into
+# Ctrl+Cmd+V in the target app.
+_KVK_MODIFIERS = (
+    54, 55,   # right/left Command
+    56, 60,   # left/right Shift
+    58, 61,   # left/right Option
+    59, 62,   # left/right Control
+)
+# CGEventKeyboardSetUnicodeString caps the string per event; 20 UTF-16 units is
+# the commonly-safe chunk (Apple's own samples use small chunks).
+_MAC_UNICODE_CHUNK = 20
+
+
+class _MacBackend:
+    """macOS backend built on Quartz (CoreGraphics events) + AppKit (NSPasteboard).
+
+    Requires the pyobjc Quartz/Cocoa frameworks (already pulled in by pynput's
+    darwin extra). Synthesized events need the user's **Accessibility** consent;
+    without it macOS drops them silently — rekounts.permissions surfaces that at
+    startup so it never looks like a broken app.
+
+    Capability map (mirrors _Win32Backend's contract):
+      * foreground "window"  -> the frontmost application's pid (NSWorkspace).
+        There is no cheap stable per-window handle across apps on macOS; the
+        frontmost app is the right granularity for "did focus move while we
+        transcribed" and is what Cmd+V lands in anyway.
+      * clipboard sequence   -> NSPasteboard.changeCount (bumps on every write,
+        exactly like GetClipboardSequenceNumber).
+      * clipboard backup     -> every type of every pasteboard item, restored
+        via new NSPasteboardItems — images/RTF/files survive, not just text.
+      * paste                -> a Cmd+V keyboard event pair posted at the HID
+        tap with the Command flag set on the events themselves (no separate
+        modifier press to get stuck).
+      * typing               -> CGEventKeyboardSetUnicodeString in small
+        chunks; newline is sent as a real Return keycode like the Windows path.
+      * is_blocked           -> always False: macOS has no UIPI equivalent
+        (Accessibility consent is all-or-nothing and reported at startup).
+    """
+
+    available = True
+
+    def __init__(self, quartz=None, appkit=None):
+        if quartz is None:
+            import Quartz as quartz
+        if appkit is None:
+            import AppKit as appkit
+        self._q = quartz
+        self._ak = appkit
+        self._pasteboard = appkit.NSPasteboard.generalPasteboard()
+
+    # -- window / focus -----------------------------------------------------
+    def foreground_window(self):
+        try:
+            app = self._ak.NSWorkspace.sharedWorkspace().frontmostApplication()
+            if app is None:
+                return None
+            return int(app.processIdentifier())
+        except Exception:
+            return None
+
+    def is_no_target(self, hwnd):
+        # No frontmost app at all is the only clear-cut "text cannot land
+        # anywhere" case; everything else gets an honest paste attempt.
+        return not hwnd
+
+    def is_blocked(self, hwnd):
+        return False
+
+    # -- modifiers ----------------------------------------------------------
+    def modifiers_down(self):
+        try:
+            state = self._q.kCGEventSourceStateHIDSystemState
+            for code in _KVK_MODIFIERS:
+                if self._q.CGEventSourceKeyState(state, code):
+                    return True
+            return False
+        except Exception:
+            return False
+
+    # -- clipboard ----------------------------------------------------------
+    def clipboard_sequence(self):
+        try:
+            return int(self._pasteboard.changeCount())
+        except Exception:
+            return None
+
+    def backup_clipboard(self):
+        try:
+            items = self._pasteboard.pasteboardItems() or []
+            snapshot = []
+            for item in items:
+                data = {}
+                for t in (item.types() or []):
+                    try:
+                        payload = item.dataForType_(t)
+                        if payload is not None:
+                            data[str(t)] = payload
+                    except Exception:
+                        pass   # a type that can't be read by value; skip it
+                if data:
+                    snapshot.append(data)
+            return snapshot
+        except Exception:
+            return None
+
+    def restore_clipboard(self, snapshot):
+        if not snapshot:
+            return
+        try:
+            items = []
+            for entry in snapshot:
+                item = self._ak.NSPasteboardItem.alloc().init()
+                for t, payload in entry.items():
+                    try:
+                        item.setData_forType_(payload, t)
+                    except Exception:
+                        pass   # best-effort per type
+                items.append(item)
+            self._pasteboard.clearContents()
+            self._pasteboard.writeObjects_(items)
+        except Exception:
+            pass   # best-effort, like the Win32 restore
+
+    def set_clipboard_text(self, text):
+        self._pasteboard.clearContents()
+        ok = self._pasteboard.setString_forType_(
+            text, self._ak.NSPasteboardTypeString)
+        if not ok:
+            raise RuntimeError("NSPasteboard rejected the text")
+
+    # -- input synthesis ----------------------------------------------------
+    def _post(self, event):
+        self._q.CGEventPost(self._q.kCGHIDEventTap, event)
+
+    def send_paste(self):
+        """Synthesize a clean Cmd+V (physical modifiers already released)."""
+        q = self._q
+        down = q.CGEventCreateKeyboardEvent(None, _KVK_ANSI_V, True)
+        up = q.CGEventCreateKeyboardEvent(None, _KVK_ANSI_V, False)
+        # The Command flag rides on the V events themselves, so there is no
+        # separate synthetic modifier press that could be left stuck down.
+        q.CGEventSetFlags(down, q.kCGEventFlagMaskCommand)
+        q.CGEventSetFlags(up, q.kCGEventFlagMaskCommand)
+        self._post(down)
+        self._post(up)
+
+    def _send_keycode(self, code):
+        q = self._q
+        self._post(q.CGEventCreateKeyboardEvent(None, code, True))
+        self._post(q.CGEventCreateKeyboardEvent(None, code, False))
+
+    def _send_text_chunk(self, chunk):
+        q = self._q
+        # Length is in UTF-16 code units (what CGEventKeyboardSetUnicodeString
+        # expects), not Python characters — astral-plane chars count as two.
+        units = len(chunk.encode("utf-16-le")) // 2
+        down = q.CGEventCreateKeyboardEvent(None, 0, True)
+        q.CGEventKeyboardSetUnicodeString(down, units, chunk)
+        up = q.CGEventCreateKeyboardEvent(None, 0, False)
+        q.CGEventKeyboardSetUnicodeString(up, units, chunk)
+        self._post(down)
+        self._post(up)
+
+    def type_unicode(self, text, delay=0.0):
+        # Mirror the Windows path: \r dropped, \n as a real Return keycode
+        # (many apps ignore a "typed" newline character), the rest in unicode
+        # chunks that need no keymap and survive any layout.
+        for line_i, line in enumerate(text.replace("\r", "").split("\n")):
+            if line_i:
+                self._send_keycode(_KVK_RETURN)
+                if delay:
+                    time.sleep(delay)
+            if delay:
+                # Per-character pacing for apps that drop fast synthetic input.
+                for ch in line:
+                    self._send_text_chunk(ch)
+                    time.sleep(delay)
+            else:
+                for start in range(0, len(line), _MAC_UNICODE_CHUNK):
+                    self._send_text_chunk(line[start:start + _MAC_UNICODE_CHUNK])
 
 
 class _Win32Backend:
@@ -513,6 +700,12 @@ def _make_backend():
             return _Win32Backend()
         except Exception as e:  # pragma: no cover
             log.warning("Win32 insertion backend unavailable (%s); "
+                        "falling back to pyperclip/pynput", e)
+    elif sys.platform == "darwin":
+        try:
+            return _MacBackend()
+        except Exception as e:  # pragma: no cover
+            log.warning("macOS insertion backend unavailable (%s); "
                         "falling back to pyperclip/pynput", e)
     return _NullBackend()
 

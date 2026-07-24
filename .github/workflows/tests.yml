@@ -37,10 +37,12 @@ jobs:
         run: python -m pytest -q
 
   pytest-posix:
-    # The app is Windows-only, but the unit suite is platform-neutral by
-    # design: the registry, winsound and Win32 clipboard layers are faked or
-    # skipped, and the Qt tests run offscreen. Keeping the suite green on
-    # Linux/macOS guards the seam a future macOS port will build on.
+    # The unit suite is platform-neutral by design: every platform layer
+    # (registry, winsound, Win32 clipboard, LaunchAgents, afplay,
+    # Quartz/NSPasteboard) is faked or skipped, and the Qt tests run
+    # offscreen. The macOS port's code paths are all exercised here via those
+    # fakes, so macos-latest green means the mac logic itself is tested —
+    # only TCC/CGEvent/NSPanel behavior needs real hardware (MACOS-TESTING.md).
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

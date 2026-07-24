@@ -218,11 +218,18 @@ def test_default_backend_prefers_sine_where_winsound_exists():
 
 
 def test_default_backend_falls_back_beep_then_null(monkeypatch):
+    import sys
+
     from rekounts import sounds
 
     class _Unavailable:
         def __init__(self, *a, **k):
             raise RuntimeError("backend unavailable here")
+
+    # This is the NON-darwin chain (darwin prefers afplay and is covered in
+    # test_sounds_macos.py); pin the platform so real macOS CI doesn't take
+    # the afplay branch here.
+    monkeypatch.setattr(sys, "platform", "win32")
 
     # sine down, beep up -> WinsoundBackend
     monkeypatch.setattr(sounds, "SineBackend", _Unavailable)

@@ -31,6 +31,7 @@ means a dead hotkey for the rest of the session.
 import ctypes
 import logging
 import queue
+import sys
 import threading
 import time
 
@@ -152,16 +153,45 @@ def hotkey_warning(hotkey):
 # same when their token sets intersect. Matching on the vk as well as the
 # character also makes the combo independent of the character round-trip, which
 # is the layout-sensitive part.
+#
+# The vk token space is PER-PLATFORM: Windows virtual-key codes (VK_A == 0x41)
+# and macOS hardware keycodes (kVK_ANSI_A == 0) are different numberings that
+# happen to overlap, so every vk-emitting/consuming helper below takes the
+# platform and only speaks its own numbering — a Windows-style ord('A') token
+# emitted on macOS would collide with unrelated mac keycodes.
 _C0_TO_LETTER = 0x60          # '\x01' + 0x60 == 'a'
 
+# macOS kVK_ANSI_* hardware keycodes for letters/digits (Carbon HIToolbox).
+# Positional like the Windows VK assumption: stable for ANSI layouts, which is
+# the same trade the Windows path already makes.
+_DARWIN_CHAR_VK = {
+    "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7,
+    "c": 8, "v": 9, "b": 11, "q": 12, "w": 13, "e": 14, "r": 15, "y": 16,
+    "t": 17, "1": 18, "2": 19, "3": 20, "4": 21, "6": 22, "5": 23,
+    "9": 25, "7": 26, "8": 28, "0": 29, "o": 31, "u": 32, "i": 34,
+    "p": 35, "l": 37, "j": 38, "k": 40, "n": 45, "m": 46,
+}
 
-def _key_tokens(key, raw=None) -> frozenset:
+
+def _char_vk(c: str, platform: str):
+    """The platform's virtual-key/keycode for one ASCII letter/digit, or None."""
+    if platform == "win32":
+        # VK_A == ord('A'), VK_0 == ord('0') — stable on Windows.
+        return ord(c.upper())
+    if platform == "darwin":
+        return _DARWIN_CHAR_VK.get(c)
+    return None
+
+
+def _key_tokens(key, raw=None, platform=None) -> frozenset:
     """Every identity ``key`` may legitimately be recognised by.
 
     ``key`` is the canonical form; ``raw`` is the original event when there is
     one — canonical() discards the virtual-key code for character keys, so the
-    vk has to be read off the raw event.
+    vk has to be read off the raw event. ``platform`` defaults to this machine
+    and is injectable so both platforms' token logic is testable everywhere.
     """
+    platform = platform or sys.platform
     tokens = set()
     if isinstance(key, keyboard.Key):
         # Modifiers (and any other bare Key) are identified by name; canonical()
@@ -182,10 +212,12 @@ def _key_tokens(key, raw=None) -> frozenset:
             chars.add(chr(ord(char) + _C0_TO_LETTER))   # '\x01' -> 'a'
     for c in chars:
         tokens.add(("char", c))
-        # ASCII letters and digits have a stable Windows virtual-key code
-        # (VK_A == ord('A'), VK_0 == ord('0')), so the physical key matches too.
+        # ASCII letters and digits map to a stable physical-key code on both
+        # Windows and macOS, so the physical key matches too.
         if len(c) == 1 and c.isascii() and c.isalnum():
-            tokens.add(("vk", ord(c.upper())))
+            vk = _char_vk(c, platform)
+            if vk is not None:
+                tokens.add(("vk", vk))
 
     for source in (key, raw):
         # Key enum members have no .vk (it lives on .value), so this only picks
@@ -198,23 +230,37 @@ def _key_tokens(key, raw=None) -> frozenset:
 
 
 # --- OS ground-truth key state (self-heal + watchdog) --------------------
-# GetAsyncKeyState reads the *physical* key state below our hook, so it still
-# tells the truth after Windows has removed the hook. We poll the combo's own
-# keys with it — not GetLastInputInfo — so ordinary mouse activity never looks
-# like hotkey input. A modifier can arrive as any of its left/right/generic
-# virtual-key codes (pynput reports Shift as VK_LSHIFT, and the Windows key has
-# no generic vk at all), so each modifier expands to its whole family: any one
-# being down means the modifier is down.
-_MODIFIER_VK_GROUPS = (
+# GetAsyncKeyState (Windows) / CGEventSourceKeyState (macOS) read the
+# *physical* key state below our hook/tap, so they still tell the truth after
+# the OS has removed it. We poll the combo's own keys — not global "was there
+# input" APIs — so ordinary mouse activity never looks like hotkey input. A
+# modifier can arrive as any of its left/right/generic codes (pynput reports
+# Shift as VK_LSHIFT, and the Windows key has no generic vk at all), so each
+# modifier expands to its whole family: any one being down means the modifier
+# is down. The groups are per-platform because the code spaces differ.
+_MODIFIER_VK_GROUPS_WIN = (
     frozenset({0x11, 0xA2, 0xA3}),   # ctrl  (VK_CONTROL / L / R)
     frozenset({0x12, 0xA4, 0xA5}),   # alt   (VK_MENU / L / R)
     frozenset({0x10, 0xA0, 0xA1}),   # shift (VK_SHIFT / L / R)
     frozenset({0x5B, 0x5C}),         # win   (VK_LWIN / VK_RWIN — no generic)
 )
+_MODIFIER_VK_GROUPS_DARWIN = (
+    frozenset({59, 62}),             # control (kVK_Control / kVK_RightControl)
+    frozenset({58, 61}),             # option  (kVK_Option / kVK_RightOption)
+    frozenset({56, 60}),             # shift   (kVK_Shift / kVK_RightShift)
+    frozenset({55, 54}),             # command (kVK_Command / kVK_RightCommand)
+)
 
 
-def _pollable_vks(req_tokens) -> frozenset:
-    """Virtual-key codes to poll for one required combo key (see _key_tokens).
+def _modifier_vk_groups(platform=None):
+    platform = platform or sys.platform
+    if platform == "darwin":
+        return _MODIFIER_VK_GROUPS_DARWIN
+    return _MODIFIER_VK_GROUPS_WIN
+
+
+def _pollable_vks(req_tokens, platform=None) -> frozenset:
+    """Key codes to poll for one required combo key (see _key_tokens).
 
     Any one of them being physically down means that key is down. Modifier
     variants are all included so a right-hand modifier is never read as 'up'.
@@ -222,14 +268,14 @@ def _pollable_vks(req_tokens) -> frozenset:
     vks = {v for (t, v) in req_tokens if t == "vk"}
     out = set(vks)
     for v in vks:
-        for group in _MODIFIER_VK_GROUPS:
+        for group in _modifier_vk_groups(platform):
             if v in group:
                 out |= group
     return frozenset(out)
 
 
 def _win_key_down(vk) -> bool:
-    """True if key ``vk`` is physically down right now, per the OS.
+    """True if key ``vk`` is physically down right now, per Windows.
 
     Best-effort: any failure (non-Windows, ctypes error) reads as 'not down'.
     The watchdog only acts on *sustained* readings, so a one-off glitch here
@@ -239,6 +285,41 @@ def _win_key_down(vk) -> bool:
         return bool(ctypes.windll.user32.GetAsyncKeyState(int(vk)) & 0x8000)
     except Exception:
         return False
+
+
+def _darwin_key_down(vk) -> bool:
+    """True if keycode ``vk`` is physically down right now, per macOS."""
+    try:
+        import Quartz
+        return bool(Quartz.CGEventSourceKeyState(
+            Quartz.kCGEventSourceStateHIDSystemState, int(vk)))
+    except Exception:
+        return False
+
+
+def _key_state_poll(platform=None):
+    """(poll_fn, trustworthy) — the platform's physical-key-state reader.
+
+    ``trustworthy`` gates the watchdog: its heal fires ``on_up`` when a combo
+    reads "up" while our tracker says "held", so a poll that could return a
+    constant False for HELD keys would force-release every push-to-talk hold
+    ~0.3s in — strictly worse than no watchdog. That is exactly the failure
+    mode on macOS without the Input Monitoring consent, so there the poll is
+    only trusted once ``CGPreflightListenEventAccess`` passes (the same consent
+    the listener itself needs — without it there is nothing for a watchdog to
+    keep alive anyway). On Windows ``GetAsyncKeyState`` needs no permission.
+    """
+    platform = platform or sys.platform
+    if platform == "win32":
+        return _win_key_down, True
+    if platform == "darwin":
+        try:
+            import Quartz
+            trusted = bool(Quartz.CGPreflightListenEventAccess())
+        except Exception:
+            trusted = False
+        return _darwin_key_down, trusted
+    return (lambda vk: False), False
 
 
 # --- dispatch (get the slow work off the hook thread) --------------------
@@ -632,7 +713,14 @@ class HotkeyManager:
         self._listener_lock = threading.Lock()
         self._dispatcher = dispatcher if dispatcher is not None else _ThreadedDispatcher()
         self._clock = clock or time.monotonic
-        self._key_state = key_state or _win_key_down
+        # An injected key_state (tests) is trusted by definition; otherwise the
+        # platform decides both the poll and whether the watchdog may act on it
+        # (see _key_state_poll — an untrustworthy poll would force-release
+        # every push-to-talk hold, so no watchdog is better than a lying one).
+        if key_state is not None:
+            self._key_state, self._key_state_trusted = key_state, True
+        else:
+            self._key_state, self._key_state_trusted = _key_state_poll()
         self._want_watchdog = watchdog
         self._watchdog = None
 
@@ -674,7 +762,7 @@ class HotkeyManager:
         with self._listener_lock:
             self._listener = listener
         listener.start()
-        if self._want_watchdog:
+        if self._want_watchdog and self._key_state_trusted:
             self._watchdog = HotkeyWatchdog(
                 is_alive=self.listener_alive,
                 combo_down=lambda: self._combo.all_required_down(self._key_state),

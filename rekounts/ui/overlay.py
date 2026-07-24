@@ -30,9 +30,88 @@ current __main__.py keeps working until the conductor rewires the app.
 """
 
 import math
+import os
+import sys
 from collections import deque
 
 from PySide6 import QtCore, QtGui, QtWidgets
+
+# --- macOS: keep the pill visible while OTHER apps are active ---------------
+# Qt.Tool windows on macOS are NSPanels with hidesOnDeactivate=YES, so the pill
+# would vanish the moment another app is focused — which is ALWAYS while
+# dictating. Three layers fix that, applied to both the pill and its hint:
+#   1. Qt.WA_MacAlwaysShowToolWindow (documented Qt attribute; needs no pyobjc)
+#   2. NSWindow collectionBehavior CanJoinAllSpaces|FullScreenAuxiliary, so the
+#      pill follows the user across Spaces and over full-screen apps
+#   3. NSPanel non-activating style + hidesOnDeactivate=NO, belt-and-braces
+# Layer 1 is always on. Layers 2-3 poke native window state that cannot be
+# verified without real hardware, so they ship behind REKOUNTS_MAC_OVERLAY_NATIVE
+# (default ON, set to 0 to disable) — see MACOS-TESTING.md for the check steps.
+_NS_CAN_JOIN_ALL_SPACES = 1 << 0     # NSWindowCollectionBehaviorCanJoinAllSpaces
+_NS_FULLSCREEN_AUXILIARY = 1 << 8    # ...FullScreenAuxiliary
+_NS_NONACTIVATING_PANEL = 1 << 7     # NSWindowStyleMaskNonactivatingPanel
+
+
+def _mac_collection_behavior() -> int:
+    """The collectionBehavior bits the overlay windows need (pure, testable)."""
+    return _NS_CAN_JOIN_ALL_SPACES | _NS_FULLSCREEN_AUXILIARY
+
+
+def _mac_native_enabled(environ=None) -> bool:
+    """Whether the native (pyobjc) visibility tweaks are enabled (the flag)."""
+    environ = environ if environ is not None else os.environ
+    return environ.get("REKOUNTS_MAC_OVERLAY_NATIVE", "1") != "0"
+
+
+def _apply_mac_tool_window_attr(widget):
+    """Layer 1: ask Qt to keep this tool window visible on app deactivate."""
+    if sys.platform != "darwin":
+        return
+    attr = getattr(QtCore.Qt, "WA_MacAlwaysShowToolWindow", None)
+    if attr is not None:
+        widget.setAttribute(attr, True)
+
+
+def _apply_mac_panel_behavior(widget):
+    """Layers 2-3: native NSWindow/NSPanel state, flag-guarded, best-effort.
+
+    Must run AFTER the native window exists (i.e. from showEvent), because
+    winId() forces window creation and the NSWindow is only reachable then.
+    Every step is independent and swallowed on failure: a pyobjc quirk must
+    degrade to "pill hides sometimes", never to a crash.
+    """
+    if sys.platform != "darwin" or not _mac_native_enabled():
+        return
+    try:
+        # Only when Qt is actually driving Cocoa windows. Under the offscreen
+        # platform (tests, CI) winId() is NOT an NSView pointer, and wrapping
+        # it as one is a segfault, not an exception — no try/except saves us.
+        if QtGui.QGuiApplication.platformName() != "cocoa":
+            return
+        import ctypes
+
+        import objc
+        view = objc.objc_object(c_void_p=ctypes.c_void_p(int(widget.winId())))
+        window = view.window()
+        if window is None:
+            return
+        try:
+            window.setCollectionBehavior_(
+                window.collectionBehavior() | _mac_collection_behavior())
+        except Exception:
+            pass
+        try:
+            window.setHidesOnDeactivate_(False)
+        except Exception:
+            pass
+        try:
+            # Only meaningful when Qt made the window an NSPanel (it does for
+            # Qt.Tool); a plain NSWindow rejects the panel-only style bit.
+            window.setStyleMask_(window.styleMask() | _NS_NONACTIVATING_PANEL)
+        except Exception:
+            pass
+    except Exception:
+        pass  # no pyobjc / restricted environment; layer 1 still applies
 
 # --- geometry (logical px; Qt scales for DPI) ---
 _IDLE_W, _IDLE_H = 98, 26
@@ -102,6 +181,7 @@ class Overlay(QtWidgets.QWidget):
             | QtCore.Qt.Tool | QtCore.Qt.WindowDoesNotAcceptFocus)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating)
+        _apply_mac_tool_window_attr(self)
         self.setMouseTracking(True)
 
         # --- public, set by the wirer ---
@@ -326,10 +406,13 @@ class Overlay(QtWidgets.QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         self._apply_no_activate()
+        _apply_mac_panel_behavior(self)
 
     def _apply_no_activate(self):
         """On Windows, add WS_EX_NOACTIVATE so clicking the pill never activates
         it (belt-and-suspenders with WindowDoesNotAcceptFocus)."""
+        if sys.platform != "win32":
+            return
         try:
             import ctypes
             hwnd = int(self.winId())
@@ -506,11 +589,16 @@ class _HintBubble(QtWidgets.QWidget):
             | QtCore.Qt.Tool | QtCore.Qt.WindowDoesNotAcceptFocus)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating)
+        _apply_mac_tool_window_attr(self)
         self._text = ""
         f = QtGui.QFont()
         f.setPointSize(9)
         f.setWeight(QtGui.QFont.Medium)
         self._font = f
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        _apply_mac_panel_behavior(self)
 
     def set_text(self, text):
         self._text = text or ""

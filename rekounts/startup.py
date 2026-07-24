@@ -17,13 +17,18 @@ public API a Settings checkbox or tray toggle should call. Example::
     startup.set_enabled(checkbox.isChecked())   # from a settings toggle
     checkbox.setChecked(startup.is_enabled())   # to reflect current state
 
-The work is delegated to a platform *backend* so a macOS ``LaunchAgent`` backend
-can be added later (see :func:`get_backend`) without changing any caller.
+The work is delegated to a platform *backend* (see :func:`get_backend`):
+:class:`WindowsRegistryBackend` on Windows, :class:`LaunchAgentBackend` (a
+plist in ``~/Library/LaunchAgents``) on macOS — callers never see the
+difference.
 """
 from __future__ import annotations
 
 import os
+import plistlib
+import shlex
 import sys
+from pathlib import Path
 
 APP_NAME = "Rekounts"
 # The Run value the app registered under its old name. It has to be actively
@@ -45,29 +50,43 @@ def _quote(path: str) -> str:
     return '"' + path + '"'
 
 
-def default_command() -> str:
-    """The command line to register so the app starts at login.
+def default_command_args() -> list[str]:
+    """The argv to register so the app starts at login, as a list.
 
-    - **Frozen** (PyInstaller exe): the exe itself.
-    - **From source**: the windowless interpreter (``pythonw.exe``) plus the
-      repo's ``launch.py``, both as absolute paths so login can run it from any
-      working directory. ``launch.py`` puts the venv's site-packages on the path.
+    - **Frozen** (PyInstaller exe / .app): the executable itself.
+    - **From source**: the interpreter plus the repo's ``launch.py``, both as
+      absolute paths so login can run it from any working directory
+      (``launch.py`` puts the venv's site-packages on the path). On Windows the
+      windowless ``pythonw.exe`` is preferred so no console flashes at login.
     """
     if getattr(sys, "frozen", False):
-        return _quote(sys.executable)
+        return [sys.executable]
 
-    exe_dir = os.path.dirname(sys.executable)
-    pythonw = os.path.join(exe_dir, "pythonw.exe")
-    if not os.path.exists(pythonw):
-        pythonw = sys.executable  # fall back to whatever launched us
+    interpreter = sys.executable
+    if sys.platform.startswith("win"):
+        pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+        if os.path.exists(pythonw):
+            interpreter = pythonw
 
     pkg_dir = os.path.dirname(os.path.abspath(__file__))
     repo_root = os.path.dirname(pkg_dir)
     launcher = os.path.join(repo_root, "launch.py")
     if os.path.exists(launcher):
-        return _quote(pythonw) + " " + _quote(launcher)
+        return [interpreter, launcher]
     # Last resort: run the module (relies on the repo being importable).
-    return _quote(pythonw) + " -m " + APP_NAME.lower()
+    return [interpreter, "-m", APP_NAME.lower()]
+
+
+def default_command() -> str:
+    """The registered command as one string (the form the backends store).
+
+    Windows quoting for the Run key; POSIX (shlex) quoting elsewhere, which is
+    also the form :class:`LaunchAgentBackend` parses back into ProgramArguments.
+    """
+    args = default_command_args()
+    if sys.platform.startswith("win"):
+        return " ".join(_quote(a) for a in args)
+    return shlex.join(args)
 
 
 class StartupBackend:
@@ -228,17 +247,91 @@ class WindowsRegistryBackend(StartupBackend):
             wr.CloseKey(key)
 
 
-def get_backend() -> StartupBackend:
-    """Return the startup backend for the current platform.
+class LaunchAgentBackend(StartupBackend):
+    """Registers startup via a per-user LaunchAgent plist on macOS.
 
-    Only Windows is implemented today; the abstraction leaves room for a macOS
-    ``LaunchAgent`` backend (a plist in ``~/Library/LaunchAgents``) to be added
-    here later.
+    launchd reads ``~/Library/LaunchAgents/*.plist`` at login; a plist with
+    ``RunAtLoad`` starts its ``ProgramArguments`` once the user session is up —
+    the direct analogue of the Windows Run key, and like it, purely per-user
+    (no admin rights, no daemons). The plist is the whole record: enable writes
+    it, disable deletes it, and ``current()`` reads the command back out of it.
+
+    Commands are stored as ProgramArguments (an argv list, launchd runs no
+    shell); the string command the :class:`StartupBackend` interface carries is
+    converted with POSIX ``shlex`` rules both ways, so ``enable(current())``
+    round-trips.
+
+    Takes effect at the NEXT login, exactly like the Windows Run key — no
+    ``launchctl`` calls here, so enabling never launches a second live instance
+    and tests need no subprocesses. ``launch_agents_dir`` is injectable so
+    tests write plists into a temp directory instead of the real one.
+
+    macOS has no Task-Manager-style external disable that is readable from
+    outside (System Settings > Login Items keeps its own private records), so
+    ``was_disabled_externally`` stays the base class's ``False``.
     """
+
+    # Reverse-DNS prefix for the launchd Label / plist filename, per macOS
+    # convention. Matches the bundle identifier planned for the .app.
+    LABEL_PREFIX = "com.rekreatedigital."
+
+    def __init__(self, launch_agents_dir: str | os.PathLike | None = None):
+        if launch_agents_dir is None:
+            launch_agents_dir = Path.home() / "Library" / "LaunchAgents"
+        self._dir = Path(launch_agents_dir)
+
+    def _plist_path(self, name: str) -> Path:
+        return self._dir / (self.LABEL_PREFIX + name.lower() + ".plist")
+
+    def enable(self, name: str, command: str) -> None:
+        args = shlex.split(command)
+        if not args:
+            raise ValueError("empty startup command")
+        payload = {
+            "Label": self.LABEL_PREFIX + name.lower(),
+            "ProgramArguments": args,
+            "RunAtLoad": True,
+            # A crashed dictation app should not be relaunched in a loop by
+            # launchd; the user starts it again like any other app.
+            "KeepAlive": False,
+        }
+        self._dir.mkdir(parents=True, exist_ok=True)
+        path = self._plist_path(name)
+        tmp = path.with_name(path.name + ".tmp")
+        with open(tmp, "wb") as f:
+            plistlib.dump(payload, f)
+        os.replace(tmp, path)   # atomic: launchd never sees a half-written plist
+
+    def disable(self, name: str) -> None:
+        try:
+            self._plist_path(name).unlink()
+        except FileNotFoundError:
+            pass   # already absent -> disabled is the desired state
+
+    def current(self, name: str) -> str | None:
+        try:
+            with open(self._plist_path(name), "rb") as f:
+                payload = plistlib.load(f)
+        except (FileNotFoundError, NotADirectoryError):
+            return None
+        except Exception:
+            # A corrupt plist is not "enabled" in any honest sense; report it
+            # as absent so enable() rewrites a whole one.
+            return None
+        args = payload.get("ProgramArguments") or []
+        if not isinstance(args, list) or not args:
+            return None
+        return shlex.join(str(a) for a in args)
+
+
+def get_backend() -> StartupBackend:
+    """Return the startup backend for the current platform."""
     if sys.platform.startswith("win"):
         return WindowsRegistryBackend()
+    if sys.platform == "darwin":
+        return LaunchAgentBackend()
     raise NotImplementedError(
-        "Launch-on-login is only implemented on Windows so far.")
+        "Launch-on-login is not implemented on this platform.")
 
 
 # --- public API (what the UI calls) -----------------------------------------

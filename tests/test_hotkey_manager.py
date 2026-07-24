@@ -2,6 +2,8 @@
 
 These exercise the manager without starting a real OS listener (no .start()).
 """
+import sys
+
 from pynput import keyboard
 
 from rekounts.hotkey_manager import (DEFAULT_HOTKEY, HotkeyManager,
@@ -180,16 +182,21 @@ def test_ctrl_letter_matches_through_the_scan_less_listener_path():
     assert events == ["start"]
 
 
-def test_ctrl_letter_matches_on_virtual_key_code_alone():
+def test_ctrl_letter_matches_on_virtual_key_code_alone(monkeypatch):
     # Some events arrive with no usable character at all; the vk still says
-    # which physical key it was (VK_A == ord('A')).
+    # which physical key it was (VK_A == ord('A')). The vk token space is
+    # per-platform now, and 0x41 is the WINDOWS numbering — pin the platform
+    # so this runs identically on every CI OS (darwin's numbering is covered
+    # in test_hotkey_darwin.py).
+    monkeypatch.setattr(sys, "platform", "win32")
     m, events, _ = make("ctrl+a")
     m._combo.press(keyboard.Key.ctrl)
     m._combo.press(keyboard.KeyCode(char=None, vk=0x41))
     assert events == ["start"]
 
 
-def test_digit_hotkey_matches_on_virtual_key_code():
+def test_digit_hotkey_matches_on_virtual_key_code(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")   # 0x31 is a Windows VK
     m, events, _ = make("alt+1")
     m._combo.press(keyboard.Key.alt)
     m._combo.press(keyboard.KeyCode(char=None, vk=0x31))   # VK_1
