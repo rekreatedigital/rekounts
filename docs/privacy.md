@@ -90,9 +90,19 @@ your Windows user profile can read these files, exactly like your documents.
 
 ## When the app touches the network
 
-Three times. Two of them are one-off or triggered by you clicking something; the
-third is a check you can switch on, which is off until you do. There are no
-background pings, no update daemon, and no account server.
+<!-- network-moments: 2 (source of truth: rekounts/network_facts.py — keep this
+     marker, tests/test_network_claims.py checks the number against the code) -->
+
+Rekounts reaches the network twice. One is a one-off download; the other is
+triggered by you clicking something, unless you switch on the opt-in check that
+is off until you do. There are no background pings, no update daemon, and no
+account server.
+
+(This page used to say three times, counting **Help** as the third. It is not:
+Help hands a URL to your web browser, and the request is your browser's. The
+same goes for clicking an update notification. Both are described below, under
+their own heading, because "your browser fetched a page you asked for" and
+"Rekounts made a request" are different promises and should not share a number.)
 
 1. **Downloading the speech model — once, on first use of a model.**
    The first launch (and the first time you pick a different model size) fetches
@@ -139,12 +149,17 @@ background pings, no update daemon, and no account server.
    are offline. Turning it back off stops it at the next launch. It is also
    `"auto_check_updates": false` in `config.json` if you would rather set it
    there.
-3. **Help — only when you click it.** Tray menu → **Help** opens this project's
-   README in your normal web browser. That request is made by your browser, not
-   by Rekounts.
-
 Your voice, your transcripts, your history and your settings are never part of
-any of these.
+either of these.
+
+### Pages Rekounts opens in your browser
+
+Two places hand a web address to your normal browser and stop there. Rekounts
+makes no request of its own, sends nothing, and never sees the answer — which is
+why they are not in the count above:
+
+- **Help.** Tray menu → **Help** opens this project's README.
+- **An update notification.** Clicking one opens the release page.
 
 ## Your clipboard
 

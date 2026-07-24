@@ -20,6 +20,7 @@ from rekounts.config import default_config_path
 from rekounts.device_utils import classify_level, resolve_input_device
 from rekounts.hotkey_manager import DEFAULT_HOTKEY, is_valid_hotkey
 from rekounts.languages import LANGUAGES
+from rekounts.network_facts import statement as network_statement
 from rekounts.ui import theme
 
 log = logging.getLogger(__name__)
@@ -44,12 +45,11 @@ def _nearest_volume(value):
     return min(sounds.VOLUME_LEVELS, key=lambda level: abs(level - value))
 
 
-NETWORK_STATEMENT = (
-    "Rekounts runs entirely on this machine. It reaches the network exactly "
-    "twice: once to download the speech model the first time you use it, and "
-    "when you click “Check for Updates” in the tray menu. Your audio and your "
-    "text never leave this computer."
-)
+# Generated from rekounts/network_facts.py rather than written out here. This
+# sentence, docs/privacy.md and SECURITY.md had drifted to three different
+# counts of the same two requests; the list is now the single source and
+# tests/test_network_claims.py holds all three to it.
+NETWORK_STATEMENT = network_statement()
 
 
 # ===================================================== hotkey capture (wave 1)
