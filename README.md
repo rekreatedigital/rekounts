@@ -8,8 +8,10 @@ Local voice dictation for Windows — a Wispr Flow–style daily driver. Hold a
 hotkey, speak, and cleaned-up text is typed into whatever app you are using.
 Your voice never leaves your machine.
 
-> **Windows 10/11 only** for now — there is no macOS or Linux version yet.
-> macOS is planned.
+> **Windows 10/11** is the supported, downloadable version. **macOS 12+ can run
+> it from source** — every platform seam has a real mac implementation, but no
+> download ships and nothing has yet been confirmed on a physical Mac. See
+> [Running on macOS](#running-on-macos) before you try it. No Linux version.
 
 - **One hotkey**: hold `Ctrl+Win` to talk, double-tap it to go hands-free.
 - **Local speech**: faster-whisper runs on your own CPU. No account, no cloud.
@@ -106,6 +108,120 @@ python -m venv .venv
 > **If `python` opens the Microsoft Store** instead of running, turn off the
 > alias: Settings → Apps → Advanced app settings → App execution aliases → turn
 > OFF `python.exe` / `python3.exe`.
+
+## Running on macOS
+
+**Status: experimental, from source only, and not yet confirmed on a physical
+Mac.** Read that as written. The macOS port is complete in the sense that every
+platform-specific piece has a real mac implementation — pasting via Quartz
+events, NSPasteboard clipboard preservation, launch-at-login as a LaunchAgent,
+data under `~/Library/Application Support/Rekounts`, permission checks that tell
+you which consent is missing — and CI installs the full mac dependency set and
+executes those code paths on every push. What CI cannot do is grant macOS
+permissions, so the behaviours that depend on them have been *reasoned about*,
+not *observed*. The open ones are listed below, and the checklist someone with a
+Mac should work through is [MACOS-TESTING.md](MACOS-TESTING.md).
+
+There is deliberately **no macOS download**. An unverified `.app` that silently
+does nothing because a permission was never granted is worse than no `.app`.
+
+### Setup
+
+You need **macOS 12 (Monterey) or newer**, Apple Silicon or Intel, and Python
+3.11+ (`brew install python@3.12`, or python.org).
+
+```sh
+git clone https://github.com/rekreatedigital/rekounts.git && cd rekounts
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt      # ~800 MB, once
+python -m pytest -q                  # sanity check: expect all green
+python -m rekounts                   # or: python launch.py
+```
+
+The first launch downloads the speech model once (~486 MB for the default
+`small`) to `~/Library/Application Support/Rekounts/models/`. After that it runs
+with the network unplugged, exactly as on Windows.
+
+Rekounts appears as a **menu-bar icon**, not a Dock icon. There is no window
+until you open the Hub.
+
+### The permissions, and the thing that surprises everyone
+
+macOS gates each of the app's three core abilities behind a separate consent,
+and **denies them silently** — no dialog, no error, the events simply never
+arrive. Rekounts checks at startup and names any that are missing, so a missing
+permission never looks like a broken app.
+
+| Consent | What stops working without it | Where |
+| --- | --- | --- |
+| **Input Monitoring** | the global hotkey — nothing responds at all | System Settings → Privacy & Security → Input Monitoring |
+| **Accessibility** | pasting the dictated text into other apps | …→ Accessibility |
+| **Microphone** | recording (this one prompts by itself on first use) | …→ Microphone |
+
+> ### ⚠️ Running from source grants the permissions to your TERMINAL, not to Rekounts
+>
+> This is the part that catches people out. macOS attributes permissions to the
+> **running process's bundle**, and when you launch with `python -m rekounts`
+> that bundle is Terminal.app, iTerm, or whatever you typed the command into.
+> So:
+>
+> * The entry you tick under Input Monitoring and Accessibility is **Terminal**
+>   (or iTerm2, or VS Code if you run it from an integrated terminal) — you will
+>   look for "Rekounts" in those lists and it will not be there.
+> * Everything you run from that terminal afterwards inherits the same grants.
+>   That is a real, permanent widening of what a shell on your Mac may do, and
+>   it is worth being deliberate about — consider a dedicated terminal app for
+>   this rather than the one you use all day.
+> * Launching from a *different* terminal means granting again, per app.
+> * After granting, **quit and reopen the terminal**, then relaunch Rekounts.
+>   macOS only re-reads the grant when the process starts.
+>
+> A packaged, signed `.app` would get its own identity and its own three grants,
+> which is the main reason packaging matters here and not just cosmetically —
+> [docs/macos-packaging.md](docs/macos-packaging.md).
+
+### What is genuinely unknown
+
+Not "probably fine" — unknown, because it has never been executed on hardware.
+These are in priority order and are exactly what
+[docs/macos-one-hour.md](docs/macos-one-hour.md) works through:
+
+1. **Long push-to-talk holds.** The recording watchdog reads physical key state
+   through `CGEventSourceKeyState`. If that lies about held keys under macOS's
+   permission model, a hold could self-release about a third of a second in.
+   There is a gate meant to prevent it (the watchdog is only enabled once the
+   Input Monitoring preflight passes) and CI confirms the gate reads the real
+   preflight — but not that the poll then tells the truth.
+2. **The dictation pill staying visible.** Its entire job is to be on screen
+   while *another* app is frontmost. macOS hides tool windows on app deactivate;
+   three layers of countermeasure are in place and none has been seen working.
+   `REKOUNTS_MAC_OVERLAY_NATIVE=0` disables the native ones if they misbehave.
+3. **The Scratchpad taking focus.** It is plain Qt with no platform branches at
+   all, and it was written before macOS was in scope. Dictation routes into the
+   note only while the note is the *active* window, and a frameless window in a
+   menu-bar-only app is precisely the case where "active" gets complicated.
+4. **Whether a `.app` builds and runs.** `Rekounts-macos.spec` and the icon and
+   entitlements it needs are written; PyInstaller has never been run on them.
+
+### Known limits on macOS (by design, not bugs)
+
+- **Focus tracking is per-app, not per-window.** Windows gives a stable handle
+  per window; macOS does not, cheaply, so "did focus move while I transcribed?"
+  is answered at the granularity of the frontmost *application*. Switching
+  between two windows of the same app will not abort a delivery.
+- **Hotkey letters and digits assume a US/ANSI layout.** The same trade the
+  Windows path already makes. Modifier-only combos (the default `Ctrl+Cmd`) and
+  function keys are layout-independent.
+- **No GPU option.** The speech engine's only accelerator backend is NVIDIA
+  CUDA, so **Processing → Auto** and **CPU** do the same thing on a Mac.
+- The default hotkey `ctrl+win` is **Ctrl+Cmd** on a Mac keyboard — the config
+  token is shared across platforms; only the label differs.
+
+If you do try it, the most useful thing you can send back is a filled-in
+[MACOS-TESTING.md](MACOS-TESTING.md) with
+`~/Library/Application Support/Rekounts/logs/rekounts.log` attached — including
+the parts that worked, since "confirmed working on hardware" is currently a list
+of zero items.
 
 ## How to dictate
 
@@ -289,6 +405,12 @@ beam width) and `preroll_seconds`.
 | Speech models | `%APPDATA%\Rekounts\models\<name>\` |
 | The program itself (if you used the installer) | `%LOCALAPPDATA%\Programs\Rekounts` |
 
+On macOS the same files live under
+`~/Library/Application Support/Rekounts/` (`config.json`, `history.db`,
+`scratchpad.json`, `logs/`, `models/`), and launch-at-login is a LaunchAgent at
+`~/Library/LaunchAgents/com.rekreatedigital.rekounts.plist` rather than a
+registry entry.
+
 Note that those are two different places on purpose: **uninstalling removes the
 program, not your data.** `%APPDATA%\Rekounts` survives uninstalls, reinstalls
 and upgrades unless you tick the uninstaller's "also delete my settings,
@@ -457,6 +579,10 @@ with the `small` model on a modern machine. To use an NVIDIA GPU, set
 the **Accuracy guide** above for what the GPU needs and how the safe fallback
 works.
 
+**On a Mac there is no GPU path at all.** The speech engine (CTranslate2) has
+only a CUDA backend, so `auto` finds nothing to use and runs on the CPU — the
+Settings row says so rather than offering a switch that does nothing.
+
 ## Building the standalone app
 
 ```bat
@@ -500,6 +626,10 @@ installer's wizard bitmaps) with:
 The mark is the site favicon transcribed into that script, which is the icon's
 source of record. The same `.ico` is used by the `.exe`, the tray, the app's
 windows, the installer and the Start-menu shortcut.
+
+The same command also writes `assets/icon.icns` — the macOS bundle icon, ten
+sizes from 16 to 1024 px. It is generated from the identical mark and committed
+like the `.ico`, and writing it needs no Mac.
 
 ### Publishing a speech model (maintainers)
 
