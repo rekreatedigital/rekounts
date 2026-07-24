@@ -98,7 +98,7 @@ This replaced the old restart-on-save, which raced the single-instance mutex.
 | `hotkey_manager.py` | `HotkeyManager` — one global hotkey, three gestures (`TapHoldGesture` + `_Combo`); the hotkey-string parser/validator; a `_ThreadedDispatcher` that keeps the OS hook thread free, and a `HotkeyWatchdog` that rebuilds a silently-dead hook / heals a stuck combo |
 | `history.py` | `History` — SQLite store for dictation entries and dictionary words; stats, streaks and daily word counts |
 | `languages.py` | Supported languages (Auto / English / Tagalog) and label↔code mapping |
-| `startup.py` | Enable/disable/query **launch on login** (Windows `HKCU\...\Run` registry key); also purges the pre-rename `TalkativeAI` entry |
+| `startup.py` | Enable/disable/query **launch on login** (Windows `HKCU\...\Run` registry key, macOS `~/Library/LaunchAgents` plist); also purges the pre-rename `TalkativeAI` entry |
 | `paths.py` | Every per-user filesystem location in one place (`%APPDATA%\Rekounts` and its children), plus the pre-rename folder name |
 | `migrate.py` | One-time move of user state from `%APPDATA%\TalkativeAI` to `%APPDATA%\Rekounts`. Runs before logging and `Config()`, since both would otherwise create/read the new folder first. Marker-file completion, per-item atomic staging, copy-except-models, never overwrites, never deletes the old folder |
 | `ui/tray.py` | `TrayApp` — tray icon, menu (Dashboard, Settings, Microphone, Language, Check for Updates, Help, Quit), toasts, the GitHub release check |

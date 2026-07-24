@@ -9,6 +9,16 @@ there.
 
 ## [Unreleased]
 
+### macOS: the port is written, pending real-hardware verification
+
+All platform seams now have macOS implementations — pasting via native
+events, clipboard preservation, launch-at-login as a LaunchAgent, data in
+`~/Library/Application Support/Rekounts`, permission checks with plain
+guidance when macOS hasn't granted mic/input access yet — plus packaging
+groundwork for a menu-bar `.app`. It is unit-tested and CI-green on macOS
+runners, but nobody has run it on a physical Mac yet: that checklist lives
+in `MACOS-TESTING.md`, and no macOS download ships until it passes.
+
 ### There is a real installer now
 
 Download `Rekounts-Setup-<version>.exe` from the releases page and run it.

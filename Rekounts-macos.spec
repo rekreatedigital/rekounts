@@ -29,6 +29,11 @@ from PyInstaller.utils.hooks import collect_all
 
 datas, binaries, hiddenimports = [], [], []
 
+# The official icon, resolved at runtime by rekounts/ui/branding.py under
+# sys._MEIPASS — without this the frozen app falls back to the code-drawn
+# mark and the official waveform icon silently disappears from the mac tray.
+datas += [(os.path.join("assets", "icon.ico"), "assets")]
+
 
 def _read_version() -> str:
     src = open(os.path.join("rekounts", "__init__.py"), encoding="utf-8").read()
@@ -106,7 +111,10 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name="Rekounts.app",
-    icon=None,               # no .icns designed yet (matches the Windows spec)
+    icon=None,               # the BUNDLE icon needs a real .icns (the Windows
+                             # .ico above covers the in-app/tray icon only);
+                             # generating one from tools/make_icon.py is part
+                             # of the hardware-verification pass
     bundle_identifier="com.rekreatedigital.rekounts",
     version=_VERSION,
     info_plist={

@@ -23,7 +23,8 @@ indicator lit — that is a thing you should opt into knowingly.
 
 ## What is stored on your machine
 
-Everything lives in `%APPDATA%\Rekounts` (typically
+Everything lives in `%APPDATA%\Rekounts` (on macOS:
+`~/Library/Application Support/Rekounts`; typically
 `C:\Users\<you>\AppData\Roaming\Rekounts`).
 
 | File | What is in it |

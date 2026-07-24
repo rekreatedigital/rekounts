@@ -265,7 +265,7 @@ that could reach out for anything.
 
 | Model | Download | Notes |
 | --- | --- | --- |
-| `base` | ~148 MB | Default. Fast on any CPU. |
+| `base` | ~148 MB | Fastest on any CPU. |
 | `small` | ~486 MB | Noticeably better on accented or natural speech. |
 | `medium` | ~1.5 GB | Most accurate, clearly slower on CPU. |
 

@@ -1,6 +1,7 @@
 # Security policy
 
-Rekounts is a local Windows app. There is no server component, no account
+Rekounts is a local desktop app (Windows today; a macOS port is code-complete
+pending hardware verification). There is no server component, no account
 system and no telemetry — your audio and text stay on the machine. The attack
 surface is the app itself plus its two network moments: the one-time speech-model
 download from **this project's own GitHub release host** (never Hugging Face —
