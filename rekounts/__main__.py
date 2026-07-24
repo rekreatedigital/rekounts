@@ -310,12 +310,13 @@ class _NullSounds:
         pass
 
 
-def _make_sounds(enabled_provider):
+def _make_sounds(enabled_provider, volume_provider=None):
     """Build the audio-cue player, or a silent stand-in if it is not there yet.
 
     Contract (feat/settings-redesign): Sounds(enabled_provider) exposes
     thread-safe non-blocking start_cue/stop_cue/error_cue, and re-reads
-    enabled_provider() on every cue so the toggle applies live.
+    enabled_provider() on every cue so the toggle applies live. volume_provider
+    is read the same way, so the Hub's volume dropdown applies live too.
     """
     try:
         from rekounts.sounds import Sounds
@@ -324,9 +325,15 @@ def _make_sounds(enabled_provider):
         return _NullSounds()
     try:
         try:
-            return Sounds(enabled_provider=enabled_provider)
+            return Sounds(enabled_provider=enabled_provider,
+                          volume_provider=volume_provider)
         except TypeError:
-            return Sounds(enabled_provider)   # positional-only signature
+            # A Sounds that predates the volume setting, or a positional-only
+            # signature. Cues still work; they just play at the built-in volume.
+            try:
+                return Sounds(enabled_provider=enabled_provider)
+            except TypeError:
+                return Sounds(enabled_provider)
     except Exception:
         log.exception("could not initialise sound cues; continuing silently")
         return _NullSounds()
@@ -737,7 +744,10 @@ def _run():
         value = cfg.get("sound_effects")
         return True if value is None else bool(value)
 
-    sounds = _make_sounds(sound_effects_enabled)
+    # Read live too, so the volume dropdown applies without a restart. A config
+    # that predates the key returns None, which sounds.py reads as "the default".
+    sounds = _make_sounds(sound_effects_enabled,
+                          volume_provider=lambda: cfg.get("sound_volume"))
 
     overlay = Overlay()
     overlay.level_provider = recorder.current_level
