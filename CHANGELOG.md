@@ -7,6 +7,36 @@ The version string lives in one place — `rekounts/__init__.py` — and
 everything else (`pyproject.toml`, the `.exe` file properties) reads it from
 there.
 
+## [Unreleased]
+
+### Fixed: long dictations no longer arrive scrambled
+
+Dictating a long passage with **Insert as → keystrokes** could deliver the
+first few words correctly and then degrade into garbage, or lose most of the
+text outright. The longer the dictation, the worse it got.
+
+The cause was that keystrokes were sent one character at a time, which turned
+a 200-word transcript into a stream of thousands of separate injections
+spread over *seconds*. Anything you did during those seconds — re-pressing the
+dictation hotkey, or switching to another app — landed in the middle of the
+message and destroyed the rest of it. Switching apps mid-delivery was the
+worst case: most of the transcript vanished from where you wanted it and the
+rest was typed into whatever you had just opened.
+
+- **Long text is now handed over in a single operation**, so it either arrives
+  complete and correct or does not arrive at all. It can no longer be
+  half-delivered, interleaved with your typing, or split across two apps.
+- **Short text still types normally**, character by character, which is what
+  live typing needs and where the clipboard is better left alone.
+- **The transcript goes wherever your cursor is when dictation ends.** Start
+  talking in one app, wander through others while you speak, finish with a
+  different text box focused — the whole transcript lands in that text box.
+- **Nothing is ever lost.** If there is no text field to deliver into, the
+  transcript is copied to your clipboard and you are told so — on top of
+  always being saved to History.
+- Emoji and other non-BMP characters are no longer at risk of arriving
+  half-formed.
+
 ## [0.3.0] — 2026-07-24
 
 The first public release.
