@@ -83,6 +83,11 @@ def _apply_mac_panel_behavior(widget):
     if sys.platform != "darwin" or not _mac_native_enabled():
         return
     try:
+        # Only when Qt is actually driving Cocoa windows. Under the offscreen
+        # platform (tests, CI) winId() is NOT an NSView pointer, and wrapping
+        # it as one is a segfault, not an exception — no try/except saves us.
+        if QtGui.QGuiApplication.platformName() != "cocoa":
+            return
         import ctypes
 
         import objc

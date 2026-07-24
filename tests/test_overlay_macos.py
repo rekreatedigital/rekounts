@@ -20,8 +20,10 @@ def test_nonactivating_panel_bit_matches_appkit():
 
 
 def test_helpers_are_noops_off_darwin():
-    """On Windows/Linux the appliers must return without touching the widget.
-    (On macOS CI they run for real against the offscreen widget — also fine.)"""
+    """The appliers must be safe to call on every platform. On macOS under the
+    offscreen Qt platform (CI) the native tweak must bail on the platformName
+    guard — an offscreen winId is not an NSView, and treating it as one is a
+    segfault (this exact crash took down the first macos-latest run)."""
     import os
     import sys
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
