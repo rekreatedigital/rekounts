@@ -319,7 +319,8 @@ def _cuda_loads_safely(model_name: str) -> bool:
 
 class Transcriber:
     def __init__(self, model_name="small", device="auto", language="en", beam_size=5,
-                 hotwords_provider=None):
+                 hotwords_provider=None, language_provider=None,
+                 beam_size_provider=None):
         self.language = None if language == "auto" else language
         # Callable -> list[str] of dictionary words to bias recognition toward.
         # Read fresh on every transcribe() call so a word added in the dashboard
@@ -328,6 +329,22 @@ class Transcriber:
         # beam_size=1 is greedy; 5 is noticeably more accurate for a modest CPU
         # cost. Accuracy matters more than ~100 ms here (per the pipeline audit).
         self.beam_size = beam_size
+        # Language and beam size are PULLED from config per call rather than
+        # pushed in on save. Pushing left two stale windows that a user reads as
+        # "it dictated with my old settings":
+        #
+        #   * the Hub's live-apply is debounced, so a change made and dictated
+        #     against inside that window went to the model as the old value;
+        #   * a model reload builds its replacement Transcriber on a background
+        #     thread and installs it seconds later, wiping any language change
+        #     made while it was loading — permanently, since the config and the
+        #     model signature both then agree there is nothing left to apply.
+        #
+        # Reading per call closes both by construction: there is no captured
+        # copy left to go stale. The plain attributes remain the source of truth
+        # when no provider is attached.
+        self.language_provider = language_provider
+        self.beam_size_provider = beam_size_provider
         # A single ctranslate2 WhisperModel is NOT safe to call concurrently:
         # warm_up() runs on a daemon thread at startup and could overlap the
         # user's first real dictation (and, when live typing is on, the stream
@@ -351,6 +368,28 @@ class Transcriber:
         """Install (or clear, with None) the dictionary-word provider."""
         self.hotwords_provider = provider
 
+    def _from_provider(self, provider, fallback, what):
+        """Read a live setting, never at the cost of the user's dictation.
+
+        A provider that raises (a half-written config, a torn-down Hub) must
+        degrade to the last known value, not lose the clip.
+        """
+        if provider is None:
+            return fallback
+        try:
+            return provider()
+        except Exception as e:
+            log.warning("%s provider failed (using %r): %s", what, fallback, e)
+            return fallback
+
+    def _current_language(self) -> str | None:
+        """The language for THIS call. "auto" (and None) mean let Whisper detect."""
+        value = self._from_provider(self.language_provider, self.language, "language")
+        return None if value == "auto" else value
+
+    def _current_beam_size(self) -> int:
+        return self._from_provider(self.beam_size_provider, self.beam_size, "beam size")
+
     def _current_hotwords(self) -> str | None:
         """The glossary prompt for this call, or None. Never raises: a broken
         provider must not cost the user their dictation."""
@@ -369,7 +408,8 @@ class Transcriber:
         hotwords = self._current_hotwords()
         with self._lock:
             segments, _ = self.model.transcribe(
-                audio, language=self.language, beam_size=self.beam_size,
+                audio, language=self._current_language(),
+                beam_size=self._current_beam_size(),
                 # Dictionary words, biasing every window of this clip. None when
                 # the dictionary is empty, which is faster-whisper's own default.
                 hotwords=hotwords,
@@ -392,8 +432,8 @@ class Transcriber:
         hotwords = self._current_hotwords()
         with self._lock:
             segments, _ = self.model.transcribe(
-                audio, language=self.language, beam_size=1, vad_filter=False,
-                hotwords=hotwords)
+                audio, language=self._current_language(), beam_size=1,
+                vad_filter=False, hotwords=hotwords)
             text = " ".join(seg.text.strip() for seg in segments).strip()
         return self._drop_prompt_echo(text, hotwords)
 
@@ -417,6 +457,7 @@ class Transcriber:
         try:
             silence = np.zeros(16000, dtype="float32")  # 1s of silence
             with self._lock:
-                list(self.model.transcribe(silence, language=self.language, beam_size=1)[0])
+                list(self.model.transcribe(
+                    silence, language=self._current_language(), beam_size=1)[0])
         except Exception as e:
             log.warning("warm-up failed (non-fatal): %s", e)
