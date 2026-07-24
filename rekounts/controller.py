@@ -43,6 +43,11 @@ def _insertion_succeeded(outcome) -> bool:
 
 
 class AppController:
+    # Breathing room granted when a cap saved mid-recording is already behind
+    # the recording (see _grace_for_a_cap_already_past). Long enough to finish a
+    # sentence, short enough that the safety net is still a safety net.
+    CAP_CHANGE_GRACE_SECONDS = 30
+
     def __init__(self, recorder, transcriber, cleaner, inserter,
                  on_overlay_show=None, on_overlay_hide=None,
                  on_error=None, on_notice=None, min_seconds=0.3, run_async=None,
@@ -97,6 +102,9 @@ class AppController:
         # from time already elapsed when the user changes it mid-recording.
         self._clock = clock or time.monotonic
         self._recording_started_at = 0.0
+        # When the current recording's one-off grace runs out, or None if a cap
+        # change has not landed in the past during this recording.
+        self._cap_grace_deadline = None
         self.sm = StateMachine()
         self._last_state = self.sm.state.value
 
@@ -131,6 +139,7 @@ class AppController:
         """Arm the auto-stop cap and its pre-warning for a fresh recording."""
         self._cancel_autostop()
         self._recording_started_at = self._clock()
+        self._cap_grace_deadline = None
         self._arm_cap_timers(self.max_recording_seconds)
 
     def _reschedule_autostop(self):
@@ -142,10 +151,34 @@ class AppController:
             return  # cap cleared mid-recording -> no auto-stop
         remaining = cap - (self._clock() - self._recording_started_at)
         if remaining <= 0:
-            # The new (shorter) cap is already exceeded -> stop right now.
-            self._auto_stop()
-            return
+            remaining = self._grace_for_a_cap_already_past()
+            if remaining <= 0:
+                self._auto_stop()
+                return
         self._arm_cap_timers(remaining)
+
+    def _grace_for_a_cap_already_past(self):
+        """Seconds left to a recording whose new cap is ALREADY behind it.
+
+        Saving a setting must not end a dictation the instant it is saved. The
+        cap exists to catch a hands-free recording you forgot to stop, not to
+        cut off one you are in the middle of: the user changed a setting, they
+        did not ask to be interrupted mid-sentence, and there is no undo for
+        speech. So a cap that lands in the past buys a short grace instead, with
+        a notice, and the user gets to finish the thought.
+
+        The grace is granted once per recording. Nudging the cap down five more
+        times re-uses the deadline already set rather than pushing it out each
+        time, so this can defer the stop but never cancel it.
+        """
+        now = self._clock()
+        if self._cap_grace_deadline is None:
+            self._cap_grace_deadline = now + self.CAP_CHANGE_GRACE_SECONDS
+            mins = self.max_recording_seconds / 60
+            self.on_notice(
+                f"The new {mins:g} min limit is already past — this recording "
+                f"stops in {self.CAP_CHANGE_GRACE_SECONDS:g}s.")
+        return self._cap_grace_deadline - now
 
     def _arm_cap_timers(self, remaining):
         """Schedule auto-stop after `remaining` seconds and, when there is room,

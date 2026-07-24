@@ -518,16 +518,66 @@ def test_auto_stop_notice_matches_the_rescheduled_cap():
     assert not any("5 min" in n for n in notices)
 
 
-def test_cap_lowered_below_elapsed_stops_immediately():
+def test_cap_lowered_below_elapsed_grants_a_grace_instead_of_stopping():
+    # Was: stopped the dictation on the spot. Saving a setting must not end a
+    # recording mid-sentence — there is no undo for speech — so a cap that lands
+    # in the past buys CAP_CHANGE_GRACE_SECONDS and says so.
     now = [0.0]
     ctrl, rec, trans, inserter, states, results, notices, errors = build(
         raw_text="hello world", max_recording_seconds=300, clock=lambda: now[0])
     ctrl.start_recording()
     now[0] = 100.0                                       # 100s elapsed
     ctrl.set_max_recording_seconds(60)                  # already past a 1-min cap
-    assert ctrl.sm.state == DictationState.IDLE          # stopped and processed
-    assert any("limit" in n.lower() for n in notices)
+    assert ctrl.sm.state == DictationState.RECORDING     # still going
+    assert ctrl._autostop_timer.interval == ctrl.CAP_CHANGE_GRACE_SECONDS
+    assert any("already past" in n for n in notices)
+    assert any("30s" in n for n in notices)
+    ctrl._auto_stop()                                    # as the grace timer would
+    assert ctrl.sm.state == DictationState.IDLE
     assert inserter.calls == ["Hello world"]            # captured audio still transcribed
+
+
+def test_the_grace_is_granted_once_not_once_per_nudge():
+    # Otherwise walking the cap down 60 -> 50 -> 40 would push the stop out
+    # forever: the grace may defer the auto-stop, never cancel it.
+    now = [0.0]
+    ctrl, *_ = build(max_recording_seconds=300, clock=lambda: now[0])
+    ctrl.start_recording()
+    now[0] = 100.0
+    ctrl.set_max_recording_seconds(60)
+    assert ctrl._autostop_timer.interval == 30           # deadline: t=130
+    now[0] = 120.0                                       # 20s of grace burned
+    ctrl.set_max_recording_seconds(30)                  # nudged down again
+    assert ctrl._autostop_timer.interval == 10           # same deadline, not a new 30
+    ctrl.stop_recording()
+
+
+def test_a_cap_change_after_the_grace_has_run_out_does_stop():
+    now = [0.0]
+    ctrl, rec, trans, inserter, states, results, notices, errors = build(
+        raw_text="hello world", max_recording_seconds=300, clock=lambda: now[0])
+    ctrl.start_recording()
+    now[0] = 100.0
+    ctrl.set_max_recording_seconds(60)                  # grace to t=130
+    now[0] = 140.0                                       # ...and past it
+    ctrl.set_max_recording_seconds(50)
+    assert ctrl.sm.state == DictationState.IDLE
+
+
+def test_the_next_recording_starts_with_a_fresh_grace():
+    now = [0.0]
+    ctrl, *_ = build(max_recording_seconds=300, clock=lambda: now[0])
+    ctrl.start_recording()
+    now[0] = 100.0
+    ctrl.set_max_recording_seconds(60)                  # burns this recording's grace
+    ctrl.stop_recording()
+    now[0] = 200.0
+    ctrl.start_recording()                               # a new dictation
+    now[0] = 300.0                                       # 100s in, cap is 60
+    ctrl.set_max_recording_seconds(30)
+    assert ctrl.sm.state == DictationState.RECORDING
+    assert ctrl._autostop_timer.interval == ctrl.CAP_CHANGE_GRACE_SECONDS
+    ctrl.stop_recording()
 
 
 def test_cap_change_while_idle_only_updates_the_value():
