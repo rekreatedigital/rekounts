@@ -212,15 +212,7 @@ dictation.
 
 Only a few tuning knobs remain config-file-only — edit
 `%APPDATA%\Rekounts\config.json` and relaunch: `beam_size` (transcription
-beam width), `stream_model` (the model live typing uses) and
-`preroll_seconds`.
-
-> **Live typing** types words as you speak instead of once at the end. It is
-> **off by default and still unreliable**: Whisper re-transcribes the growing
-> audio buffer and rewrites earlier words, which produces doubled or garbled
-> text. Leave it off for accurate dictation. If you turn it on, use a
-> non-modifier hotkey like `F8` — holding Ctrl/Win while it types would fire
-> shortcuts.
+beam width) and `preroll_seconds`.
 
 ## Troubleshooting
 

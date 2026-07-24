@@ -91,10 +91,9 @@ This replaced the old restart-on-save, which raced the single-instance mutex.
 | `audio_recorder.py` | `AudioRecorder` — 16 kHz mono capture via `sounddevice`; optional pre-roll ring buffer; live level + snapshot |
 | `audio_utils.py` | `rms_level`, `normalize_gain` — pure-numpy audio helpers (gain-boost quiet mics) |
 | `device_utils.py` | `list_microphones()` — the canonical mic list (one entry per endpoint, full names, DirectSound-only); resolve a saved mic **name** → device index; RMS thresholds for the mic Test button |
-| `transcriber.py` | `Transcriber` — wraps faster-whisper; CPU/CUDA selection, offline-first model loads, dictionary hotwords, warm-up, a model lock so streaming can't race the final pass, and the silence-hallucination phrase set |
+| `transcriber.py` | `Transcriber` — wraps faster-whisper; CPU/CUDA selection, offline-first model loads, dictionary hotwords, warm-up, a model lock so a background warm-up can't race a transcription, and the silence-hallucination phrase set |
 | `text_cleaner.py` | `TextCleaner` — strip fillers, capitalize, fix punctuation spacing, collapse stutters |
 | `text_inserter.py` | `TextInserter` — paste (default) or keystroke insertion behind a Win32 backend; native clipboard save/restore across all formats, modifier-release wait, elevation (UIPI) and focus-change guards; returns an `InsertResult` outcome |
-| `text_stream.py` | `LiveTyper` + `new_suffix` — forward-only word streaming for experimental live typing |
 | `hotkey_manager.py` | `HotkeyManager` — one global hotkey, three gestures (`TapHoldGesture` + `_Combo`); the hotkey-string parser/validator; a `_ThreadedDispatcher` that keeps the OS hook thread free, and a `HotkeyWatchdog` that rebuilds a silently-dead hook / heals a stuck combo |
 | `history.py` | `History` — SQLite store for dictation entries and dictionary words; stats, streaks and daily word counts |
 | `languages.py` | Supported languages (Auto / English / Tagalog) and label↔code mapping |
@@ -160,12 +159,6 @@ release / tap
                                         safety net)
   → [PROCESSING → IDLE]
 ```
-
-Live typing (off by default, experimental) adds a background loop in
-`__main__.py` that periodically transcribes the in-progress buffer and streams
-new words via `LiveTyper`; the release pass then appends only the remaining
-tail. The loop re-checks `controller.live_typing` every iteration so the setting
-can be flipped at runtime.
 
 ## Where things live on disk
 

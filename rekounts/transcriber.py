@@ -384,19 +384,6 @@ class Transcriber:
             text = join_segments(seg.text for seg in segments)
         return self._drop_prompt_echo(text, hotwords)
 
-    def transcribe_stream(self, audio: np.ndarray) -> str:
-        """Fast, greedy, VAD-off pass for the live-typing preview loop. Shares the
-        model lock so it can't collide with warm-up or a final transcription."""
-        if audio is None or len(audio) == 0:
-            return ""
-        hotwords = self._current_hotwords()
-        with self._lock:
-            segments, _ = self.model.transcribe(
-                audio, language=self.language, beam_size=1, vad_filter=False,
-                hotwords=hotwords)
-            text = " ".join(seg.text.strip() for seg in segments).strip()
-        return self._drop_prompt_echo(text, hotwords)
-
     @staticmethod
     def _drop_prompt_echo(text: str, hotwords: str | None) -> str:
         if _is_prompt_echo(text, hotwords):

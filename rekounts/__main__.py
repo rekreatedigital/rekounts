@@ -430,54 +430,11 @@ def _build_inserter(cfg):
     """Build the TextInserter the app inserts with, from config.
 
     One place, because it is built twice (startup and every Save) and the two
-    used to be able to drift. Live typing forces keystroke mode: the streaming
-    increments must not go through the clipboard, and paste mode's whole job is
-    the clipboard.
+    used to be able to drift.
     """
     return TextInserter(
-        mode="keystroke" if cfg.get("live_typing") else cfg.get("insertion_mode"),
+        mode=cfg.get("insertion_mode"),
         long_text_via_paste=bool(cfg.get("long_text_via_paste")))
-
-
-def stream_tick(controller):
-    """One live-typing tick: transcribe the partial buffer, type the new words.
-
-    Module-level rather than buried in ``stream_loop`` so the invariant that
-    matters is testable: increments are handed to ``insert(streaming=True)``,
-    which is what keeps a per-tick insertion off the user's clipboard. Without
-    that flag a tick with focus on the desktop — or a tick long enough to trip
-    the long-text escalation — would overwrite whatever the user had copied,
-    every 0.8 seconds, with no notice and no restore.
-
-    Returns the InsertResult, or None when the tick had nothing to do.
-    """
-    from rekounts.audio_utils import normalize_gain
-
-    # Gate on the mode the CURRENT recording was started in, not on the config.
-    # Live-apply keeps controller.live_typing fresh, but a recording already in
-    # flight finishes in the mode it began with (see
-    # AppController.start_recording), and the streamer has to agree with it:
-    # streaming into a recording that will finish via _finish_final types the
-    # text twice.
-    if not controller.live_typing_active:
-        return None
-    if not controller.is_recording():
-        return None
-    snap = controller.preview_snapshot()
-    if snap is None or len(snap) < int(0.5 * 16000):
-        return None
-    # transcribe_stream serializes on the model lock, so the live preview can't
-    # race the warm-up or the final release pass. Read the transcriber/inserter
-    # off the controller so a live model or insertion-mode change is picked up
-    # here too.
-    raw = controller.transcriber.transcribe_stream(normalize_gain(snap))
-    # LiveTyper tracks emitted word count -> emits each word once, no doubling.
-    had_streamed = controller.live_typer._emitted > 0
-    new_words = controller.live_typer.feed(raw)
-    if not new_words:
-        return None
-    return controller.inserter.insert(
-        (" " if had_streamed else "") + new_words, streaming=True)
 
 
 def _show_fatal_dialog(tb: str):
@@ -644,11 +601,6 @@ def _run():
     # the moment the tray attaches.
     notices = NotificationBuffer()
 
-    def active_model_name():
-        # When live typing is on, use the faster stream_model for everything so
-        # words appear quickly; otherwise use the user's chosen (accurate) model.
-        return cfg.get("stream_model") if cfg.get("live_typing") else cfg.get("model")
-
     # Dictionary providers are wired into every Transcriber/TextCleaner built
     # below. They read the History, which needs Qt-free construction — History
     # imports only sqlite3, so it is safe to build here, before Qt.
@@ -710,11 +662,11 @@ def _run():
     # 1) Fetch (if needed) and load the model FIRST, before any Qt import (see
     # note above). Progress goes to the log live and to the notice buffer for
     # replay once the tray exists.
-    transcriber = build_transcriber(active_model_name(), cfg.get("device"),
+    transcriber = build_transcriber(cfg.get("model"), cfg.get("device"),
                                     notify=notices.deliver)
     # Only the model name and device require a reload; language and beam_size are
     # read per transcribe() call, so live-apply just sets those attributes.
-    current_model_sig = (active_model_name(), cfg.get("device"))
+    current_model_sig = (cfg.get("model"), cfg.get("device"))
     # The hotkey value the live listener is currently built for. apply_settings
     # rebuilds the listener ONLY when this actually changes — rebuilding it on
     # every Save would hand a fresh IDLE gesture to a recording already in
@@ -738,10 +690,6 @@ def _run():
             recorder.arm()
         except Exception as e:
             log.warning("pre-roll arm failed (non-fatal): %s", e)
-    # Live typing streams words via keystrokes (paste-per-chunk would clobber the
-    # clipboard repeatedly), so force keystroke mode when live typing is on. The
-    # increments themselves also go out with streaming=True, which is what
-    # actually enforces the invariant — see stream_tick().
     inserter = _build_inserter(cfg)
 
     # 2) Now it is safe to import and initialize Qt.
@@ -845,7 +793,6 @@ def _run():
         on_error=on_error,
         on_notice=lambda m: (log.info(m), bridge.notify.emit(m)),
         run_async=run_async,
-        live_typing=cfg.get("live_typing"),
         on_state=on_state,
         on_result=bridge.result.emit,
         max_recording_seconds=cfg.get("max_recording_seconds"),
@@ -900,22 +847,6 @@ def _run():
     hotkeys = build_hotkeys()
     hotkeys.start()
 
-    def stream_loop():
-        import time
-        while True:
-            time.sleep(0.8)
-            try:
-                outcome = stream_tick(controller)
-                if outcome is not None and outcome not in ("typed", "skipped"):
-                    # Not a notice: an increment that missed is re-sent as part
-                    # of the final transcript a moment later, and nagging every
-                    # 0.8s would be worse than saying nothing.
-                    log.debug("live-typing increment not delivered (%s)", outcome)
-            except Exception:
-                pass  # streaming is best-effort; final release pass still runs
-
-    threading.Thread(target=stream_loop, daemon=True).start()
-
     def apply_settings():
         """Live-apply saved settings in-process — no restart, so there is no
         single-instance race and no lost dictation."""
@@ -942,7 +873,6 @@ def _run():
         # the dictionary replacements provider to the new instance).
         controller.cleaner = build_cleaner()
         controller.inserter = _build_inserter(cfg)
-        controller.live_typing = cfg.get("live_typing")
         controller.filter_hallucinations = cfg.get("filter_hallucinations")
         # Reschedules the running cap timer (and its warning) from elapsed time,
         # so a mid-recording change keeps the interval and the notice in step.
@@ -978,7 +908,7 @@ def _run():
         # deliberately NOT reapplied here.
 
         # Model: reload on a background thread only if name/device changed.
-        new_sig = (active_model_name(), cfg.get("device"))
+        new_sig = (cfg.get("model"), cfg.get("device"))
         if new_sig != current_model_sig:
             current_model_sig = new_sig
             # Claim the generation NOW, on the UI thread, so the ordering of

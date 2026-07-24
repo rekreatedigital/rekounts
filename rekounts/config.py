@@ -22,7 +22,6 @@ DEFAULTS = {
     # ordering on YOUR voice with tools/asr_bench.py (see the README's Accuracy
     # guide - clean TTS clips can't tell the models apart, real speech can).
     "model": "small",
-    "stream_model": "base",      # faster model for live-typing chunks (base/tiny/small)
     # Device for the transcription model. The Settings UI offers two:
     #   "cpu"  - default; no GPU libraries needed, works everywhere.
     #   "auto" - probe for a GPU that can actually transcribe (load AND a tiny
@@ -51,10 +50,6 @@ DEFAULTS = {
     # back. Turn OFF to always type literally: the escape hatch for apps that
     # silently ignore Ctrl+V, where a paste cannot be detected as refused.
     "long_text_via_paste": True,
-    # Off by default: Whisper re-transcribes the whole growing buffer each tick and
-    # freely rewrites earlier words, so chunk-append live typing produces doubled/
-    # garbled text. Reliable behavior is to type clean text once, on release.
-    "live_typing": False,        # experimental; type words as you speak (chunk-append)
     "launch_on_startup": False,
     # --- pipeline quality (feat/pipeline-quality) ---------------------------
     # Pre-roll: keep a short rolling audio buffer so the first syllable isn't

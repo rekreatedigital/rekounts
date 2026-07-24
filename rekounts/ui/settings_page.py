@@ -408,12 +408,6 @@ class SettingsPage(QtWidgets.QWidget):
                    "all-round default. First use of a model downloads it once; "
                    "switching reloads in the background and dictation keeps "
                    "working meanwhile.")
-    # While live typing is on the app transcribes with the faster streaming model
-    # for speed, so the chosen model is ignored — say so instead of letting the
-    # control look effective.
-    _MODEL_HINT_LIVE = ("Live typing uses the faster streaming model, so this "
-                        "setting has no effect until you turn Live typing off.")
-
     test_done = QtCore.Signal(str)
 
     def __init__(self, config, history=None, on_saved=None, startup_setter=None,
@@ -459,10 +453,6 @@ class SettingsPage(QtWidgets.QWidget):
         self._build_system()
         self._build_privacy()
         self._body.addStretch(1)
-
-        # The model selector is inert while live typing is on (the app uses the
-        # streaming model then) — reflect that from the start, not just on change.
-        self._sync_model_availability(bool(self.config.get("live_typing")))
 
     # ----------------------------------------------------------- persistence
     def _persist(self, key, value):
@@ -573,12 +563,6 @@ class SettingsPage(QtWidgets.QWidget):
             "models are only fast on a GPU."))
 
         self._body.addWidget(sec)
-
-    def _sync_model_availability(self, live_on):
-        """Live typing overrides the chosen model with the streaming model, so
-        grey the control out and explain why rather than letting it look live."""
-        self.model.setEnabled(not live_on)
-        self.model_row.set_hint(self._MODEL_HINT_LIVE if live_on else self._MODEL_HINT)
 
     def _hotkey_changed(self, combo):
         # Belt-and-suspenders: the capture widget only ever emits valid combos,
@@ -696,13 +680,6 @@ class SettingsPage(QtWidgets.QWidget):
             "transcript intact, so anything over ~100 characters goes via the "
             "clipboard and the clipboard is put straight back. Turn off if "
             "your app ignores Ctrl+V."))
-
-        self.live_typing = self._switch("live_typing", self._sync_model_availability)
-        sec.add(SettingsRow(
-            "Live typing", self.live_typing,
-            "Types words while you speak. Whisper rewrites earlier words as it "
-            "hears more, so text can churn before it settles.",
-            tag="Experimental"))
 
         self.strip_fillers = self._switch("strip_fillers")
         sec.add(SettingsRow("Remove filler words", self.strip_fillers,

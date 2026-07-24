@@ -165,43 +165,14 @@ def test_transcription_error_returns_to_idle():
     assert inserted == []
 
 
-def test_live_mode_types_only_untyped_tail():
-    rec = FakeRecorder(np.ones(16000, dtype="float32"))
-    trans = FakeTranscriber("hello world how are you")
-    inserted = []
-    ctrl = AppController(
-        recorder=rec, transcriber=trans, cleaner=TextCleaner(),
-        inserter=type("I", (), {"insert": lambda self, t: inserted.append(t)})(),
-        min_seconds=0.3, live_typing=True,
-    )
-    ctrl.start_recording()
-    ctrl.live_typer.feed("hello world")   # streaming already typed these 2 words
-    ctrl.stop_recording()
-    assert inserted == [" how are you"]   # only the tail (with leading space)
-
-
-def test_live_mode_types_full_text_when_nothing_streamed():
-    rec = FakeRecorder(np.ones(16000, dtype="float32"))
-    trans = FakeTranscriber("hello world how are you")
-    inserted = []
-    ctrl = AppController(
-        recorder=rec, transcriber=trans, cleaner=TextCleaner(),
-        inserter=type("I", (), {"insert": lambda self, t: inserted.append(t)})(),
-        min_seconds=0.3, live_typing=True,
-    )
-    ctrl.start_recording()
-    ctrl.stop_recording()   # no streaming happened -> release types everything
-    assert inserted == ["hello world how are you"]
-
-
-def test_non_live_mode_unchanged_types_cleaned_full():
+def test_release_types_the_cleaned_full_transcript():
     rec = FakeRecorder(np.ones(16000, dtype="float32"))
     trans = FakeTranscriber("um hello world")
     inserted = []
     ctrl = AppController(
         recorder=rec, transcriber=trans, cleaner=TextCleaner(),
         inserter=type("I", (), {"insert": lambda self, t: inserted.append(t)})(),
-        min_seconds=0.3, live_typing=False,
+        min_seconds=0.3,
     )
     ctrl.start_recording()
     ctrl.stop_recording()
@@ -448,47 +419,6 @@ def test_start_recording_reports_failure_on_microphone_error():
     assert ctrl.start_recording() is False
     assert ctrl.sm.state == DictationState.IDLE
     assert errors and "Microphone error" in errors[0]
-
-
-# --- finding 6: settings changed while a recording is in flight ------------
-def test_live_typing_enabled_mid_recording_does_not_affect_this_clip():
-    # Started with live typing OFF, so this clip must still go through
-    # TextCleaner on release. It used to take the live path and insert the raw
-    # transcript — fillers, no capitalisation — because _process read the
-    # config value at FINISH time.
-    ctrl, rec, trans, inserter, states, results, notices, errors = build(
-        raw_text="um hello world", live_typing=False)
-    ctrl.start_recording()
-    ctrl.live_typing = True            # user hits Save mid-recording
-    ctrl.stop_recording()
-    assert inserter.calls == ["Hello world"]   # cleaned, not raw
-
-
-def test_live_typing_disabled_mid_recording_does_not_double_type():
-    # The mirror image: this clip started live and already had words streamed
-    # into the target, so the release pass must still append only the tail. A
-    # full cleaned insert would type everything twice.
-    ctrl, rec, trans, inserter, states, results, notices, errors = build(
-        raw_text="hello world how are you", live_typing=True)
-    ctrl.start_recording()
-    ctrl.live_typer.feed("hello world")   # streaming already typed these
-    ctrl.live_typing = False              # user hits Save mid-recording
-    ctrl.stop_recording()
-    assert inserter.calls == [" how are you"]
-
-
-def test_mode_change_applies_to_the_next_recording():
-    ctrl, rec, trans, inserter, states, results, notices, errors = build(
-        raw_text="um hello world", live_typing=False)
-    ctrl.start_recording()
-    ctrl.stop_recording()
-    assert inserter.calls == ["Hello world"]
-
-    ctrl.live_typing = True               # Saved between recordings
-    ctrl.start_recording()
-    assert ctrl.live_typing_active is True
-    ctrl.stop_recording()
-    assert inserter.calls[-1] == "um hello world"   # live path: raw as typed
 
 
 # --- finding 5a: warn the user before the cap auto-stops -------------------

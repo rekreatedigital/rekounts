@@ -174,19 +174,6 @@ Do these on a machine — or a spare Windows user profile — that still has a r
       exits; the old app is unaffected. Quit the old one, start Rekounts → it
       starts normally.
 
-## Live typing (experimental, OFF by default)
-
-Types words as you speak instead of once on release. It is **off by default and
-known to be unreliable** (Whisper rewrites earlier words as the buffer grows,
-causing doubled/garbled text). Only test it if you deliberately enable it.
-
-- [ ] Settings → turn on **Live typing** (applies immediately). Switch the
-      hotkey to a non-modifier key like **F8** first — holding Ctrl/Win while
-      it types would fire shortcuts. Hold, speak → words appear in groups while
-      speaking; the tail completes on release.
-- [ ] Turn **Live typing** off → words appear only on release (cleaned).
-      The streaming loop must actually stop — no double-typing.
-
 ## The standalone .exe
 
 Run this after any change to `Rekounts.spec`, `requirements.txt`, or the
