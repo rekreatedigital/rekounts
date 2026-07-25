@@ -7,7 +7,7 @@ The version string lives in one place — `rekounts/__init__.py` — and
 everything else (`pyproject.toml`, the `.exe` file properties) reads it from
 there.
 
-## [Unreleased]
+## [0.4.1] — 2026-07-25
 
 ### Fixed: phantom YouTube outros no longer reach your transcript
 
@@ -52,8 +52,6 @@ Now it asks. Every one of those arrives, because the model reports it clearly
 heard speech; the identical words over silence still get dropped. Same for
 "Okay." on its own, "Thanks, bye.", "Thanks for listening.", "That's it for
 today." and "Thank you for joining us." — all real dictation, all delivered.
-
-## [0.4.1] — 2026-07-25
 
 ### Fixed: scrolling the Settings page no longer changes your settings
 
