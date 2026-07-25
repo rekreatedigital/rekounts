@@ -7,7 +7,32 @@ The version string lives in one place — `rekounts/__init__.py` — and
 everything else (`pyproject.toml`, the `.exe` file properties) reads it from
 there.
 
-## [Unreleased]
+## [0.4.1] — 2026-07-25
+
+### Fixed: scrolling the Settings page no longer changes your settings
+
+The Settings page is taller than the window, so you have to scroll it to read
+it. If the mouse pointer happened to be resting on a dropdown while you
+scrolled — and it usually is, because the dropdowns sit in the middle of the
+page — the wheel changed *that setting* instead of scrolling. The page didn't
+move, so there was nothing to see; and because settings apply the moment they
+change, the new value was already saved and running.
+
+That could quietly switch your speech model, your microphone, your language,
+how text is inserted, or your Processing device while you were simply reading.
+One scroll over **Maximum recording length** could even end a dictation you
+were in the middle of.
+
+- **The wheel now scrolls the page, always.** It never changes a control's
+  value, even one you have just clicked on. Click a dropdown, or use the arrow
+  keys, to change a setting — the only ways that mean you meant it.
+- **Changing the recording limit can no longer cut off a recording in
+  progress.** If you set a limit shorter than what you have already recorded,
+  you get 30 seconds and a heads-up to finish your sentence, instead of the
+  recording stopping the instant you saved the setting.
+
+If your settings look different from how you remember leaving them, this is
+why. Worth a quick look down the page — **Processing** especially.
 
 ### Added: Send Feedback — with nothing on the other end
 
@@ -118,32 +143,7 @@ faking them, `assets/icon.icns` and `packaging/entitlements.plist` are written,
 and [docs/macos-one-hour.md](docs/macos-one-hour.md) is the ordered list of what
 to check first on a borrowed Mac.
 
-## [0.4.0] — 2026-07-25
-
-### Fixed: scrolling the Settings page no longer changes your settings
-
-The Settings page is taller than the window, so you have to scroll it to read
-it. If the mouse pointer happened to be resting on a dropdown while you
-scrolled — and it usually is, because the dropdowns sit in the middle of the
-page — the wheel changed *that setting* instead of scrolling. The page didn't
-move, so there was nothing to see; and because settings apply the moment they
-change, the new value was already saved and running.
-
-That could quietly switch your speech model, your microphone, your language,
-how text is inserted, or your Processing device while you were simply reading.
-One scroll over **Maximum recording length** could even end a dictation you
-were in the middle of.
-
-- **The wheel now scrolls the page, always.** It never changes a control's
-  value, even one you have just clicked on. Click a dropdown, or use the arrow
-  keys, to change a setting — the only ways that mean you meant it.
-- **Changing the recording limit can no longer cut off a recording in
-  progress.** If you set a limit shorter than what you have already recorded,
-  you get 30 seconds and a heads-up to finish your sentence, instead of the
-  recording stopping the instant you saved the setting.
-
-If your settings look different from how you remember leaving them, this is
-why. Worth a quick look down the page — **Processing** especially.
+## [0.4.0] — 2026-07-25 (built, never published — superseded by 0.4.1 the same day)
 
 ### Fixed: long dictations no longer arrive scrambled
 
