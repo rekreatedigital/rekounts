@@ -19,13 +19,39 @@ number.
 
 | # | Question | Why it is first / at risk |
 | --- | --- | --- |
-| **1** | Does the **global hotkey survive a long hold**? | The watchdog reads physical key state via `CGEventSourceKeyState`. If that lies about held keys under macOS's permission model, every push-to-talk hold self-releases ~0.3 s in and the app is unusable for its actual purpose. There is a gate meant to prevent it; CI proves the gate reads the real preflight, not that the poll then tells the truth. |
+| **1** | Does the **global hotkey survive a long hold**? | The watchdog reads physical key state via `CGEventSourceKeyState`. If that lies about held keys under macOS's permission model, every push-to-talk hold self-releases ~0.3 s in and the app is unusable for its actual purpose. A gate is meant to prevent that by disabling the watchdog until the Input Monitoring preflight passes — **and CI has now measured that preflight returning `True` on a runner nobody granted anything on** (see below), so the gate is not the protection it reads as. |
 | **2** | Does the **pill stay visible** when another app is frontmost? | That is its entire job — you are always dictating *into something else*. macOS hides tool windows on app deactivate. Three layers of countermeasure, none ever observed working. |
 | **3** | Can the **Scratchpad take focus and receive dictation**? | New in v0.4.0, pure Qt, **zero platform branches**, written before macOS was in scope. Routing depends on `isActiveWindow()` for a frameless translucent window. Fails silently, not loudly. |
 | **4** | With **Accessibility revoked**, is the startup toast the only warning? | `CGEventPost` does not fail when consent is missing — it is dropped. The app believes it pasted. If the toast does not appear, a user's first experience is an app that does nothing and says nothing. |
 
 If you can only answer one, answer **1**. A dictation app whose push-to-talk
 cannot be held has nothing else worth testing.
+
+### What CI already measured, and why it makes Q1 worse
+
+The `pytest-macos-runtime` leg runs the real frameworks on a GitHub
+`macos-latest` (arm64) runner. Two results from its first run, 2026-07-25:
+
+* **The whole runtime dependency set installs cleanly on Apple Silicon** in
+  about 23 seconds — PySide6 6.7.2, ctranslate2 4.8.1, onnxruntime 1.27.0,
+  av 12.3.0 and the four pyobjc frameworks at 11.1 on pyobjc-core 12.2.1. That
+  was previously an open question with a plausible "no". It is settled.
+* **`CGPreflightListenEventAccess()` returned `True`** with nobody having
+  granted anything. `_key_state_poll` treats a passing preflight as licence to
+  enable the watchdog, on the reasoning that a preflight only passes once the
+  user has consented. At least one real environment breaks that reasoning, so
+  the gate does not rule out the self-releasing-hold failure. **Hence Q1 first.**
+
+Two smaller notes from the same install, for whoever picks up packaging:
+
+* `requirements.txt` pins `faster-whisper==1.0.3` but leaves its native stack to
+  resolve freely (`ctranslate2<5,>=4.0`, `onnxruntime<2,>=1.14`). CI got 4.8.1
+  and 1.27.0; a Mac two weeks from now may not.
+* The onnxruntime wheel CI resolved is tagged **`macosx_14_0_arm64`** — macOS 14
+  or newer — while `Rekounts-macos.spec` declares
+  `LSMinimumSystemVersion: 12.0`. pip will backtrack to an older onnxruntime on
+  macOS 12–13, so those users get a version nothing has tested. If you are on
+  macOS 12 or 13, say so in your report; that alone is a useful data point.
 
 ## Before the hour starts
 
@@ -77,7 +103,9 @@ tail -f ~/Library/Application\ Support/Rekounts/logs/rekounts.log
    * **Fail:** the recording stops on its own after roughly a third of a second.
      Grep the log for `healing a stuck combo`. Seeing that means the trust gate
      passed but `CGEventSourceKeyState` is still lying — report it with the log
-     lines, it is the single most valuable finding available today.
+     lines, it is the single most valuable finding available today. Note that CI
+     has already shown the gate is willing to open without a real grant, so this
+     is not a remote possibility.
 3. **Double-tap** Ctrl+Cmd → hands-free latch; **single tap** stops it.
 4. Change the hotkey to **F8** in Settings and repeat the 30-second hold. F8 is
    layout-independent, so if F8 holds and Ctrl+Cmd does not, the problem is the

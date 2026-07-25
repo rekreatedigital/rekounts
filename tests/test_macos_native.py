@@ -172,23 +172,63 @@ def test_check_permissions_returns_the_three_real_states():
         assert message in [s.guidance for s in states]
 
 
-def test_the_hotkey_watchdog_gate_reads_the_real_preflight():
+def test_the_hotkey_watchdog_gate_is_derived_from_the_real_preflight():
     """The watchdog is only built when the key-state poll is TRUSTED, and on
-    darwin that means the real ``CGPreflightListenEventAccess`` said yes.
+    darwin that means ``CGPreflightListenEventAccess`` said yes.
 
-    A CI runner has no Input Monitoring grant, so ``trusted`` must come back
-    False — which proves the gate consults the real API instead of assuming.
-    Were it True here, the watchdog would ship enabled on a machine whose poll
-    reads held keys as up, and every push-to-talk hold would self-release ~0.3 s
-    in (the failure the gate exists to prevent).
+    ### A finding, recorded here because it cost a red CI run to learn
+
+    This test first asserted ``trusted is False`` on the reasoning that a CI
+    runner cannot have been granted Input Monitoring. **On the GitHub
+    macos-latest (arm64) runner, the real ``CGPreflightListenEventAccess()``
+    returns True.** Nobody clicked anything.
+
+    Whatever the cause — a runner image with the TCC database pre-authorised, or
+    a preflight that is simply more permissive than its name suggests — the
+    consequence for Rekounts is the same and it is not reassuring: **the gate
+    will happily open on a machine where no human granted anything.** The design
+    comment on ``_key_state_poll`` treats a passing preflight as evidence that
+    the poll can be believed, and this is one concrete environment where that
+    inference does not hold.
+
+    That does not make the gate useless (it still closes when the preflight says
+    no), but it does mean the "long hold self-releases" failure it was built to
+    prevent is NOT ruled out by the gate alone. It stays the first thing to check
+    on real hardware — MACOS-TESTING.md §2, docs/macos-one-hour.md Q1.
+
+    So the assertion here is the one that is true in every environment and still
+    worth making: the answer is *read from the API*, not hardcoded, in both
+    directions.
     """
     from rekounts.hotkey_manager import _darwin_key_down, _key_state_poll
+
     poll, trusted = _key_state_poll()
     assert poll is _darwin_key_down
-    assert trusted is False, (
-        "CGPreflightListenEventAccess claimed Input Monitoring is granted on a "
-        "runner that cannot have it")
-    # The poll itself must still answer (it just cannot be believed).
+    assert isinstance(trusted, bool)
+
+    # Swap the module rather than setattr-ing on the pyobjc one: _key_state_poll
+    # does `import Quartz` at call time, so sys.modules is the seam, and poking
+    # attributes on a lazily-populated framework module is not a promise pyobjc
+    # makes.
+    class _Preflight:
+        def __init__(self, answer):
+            self._answer = answer
+
+        def CGPreflightListenEventAccess(self):
+            return self._answer
+
+    mp = pytest.MonkeyPatch()
+    try:
+        for answer in (False, True):
+            mp.setitem(sys.modules, "Quartz", _Preflight(answer))
+            assert _key_state_poll()[1] is answer, (
+                "the watchdog trust gate is not reading "
+                "CGPreflightListenEventAccess")
+    finally:
+        mp.undo()
+
+    # Back on the real framework, and the poll itself must answer (whether it
+    # answers TRUTHFULLY under TCC is the open hardware question).
     assert _darwin_key_down(59) in (True, False)   # left Control
 
 

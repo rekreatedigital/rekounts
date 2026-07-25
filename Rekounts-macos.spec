@@ -138,6 +138,12 @@ app = BUNDLE(
             "audio anywhere.",
         "NSHumanReadableCopyright":
             "Copyright (C) 2026 Rekreate Digital. GPL-3.0.",
+        # UNVERIFIED against a real build. Note the tension found on 2026-07-25:
+        # on Apple Silicon, `pip install -r requirements.txt` resolves an
+        # onnxruntime wheel tagged macosx_14_0_arm64 (macOS 14+). pip backtracks
+        # to an older onnxruntime on 12-13, so a build made there uses a version
+        # nothing has tested. Either raise this to 14.0 or test on 12 before any
+        # download ships — see docs/macos-one-hour.md.
         "LSMinimumSystemVersion": "12.0",
         "NSHighResolutionCapable": True,
     },

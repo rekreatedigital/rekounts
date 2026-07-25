@@ -79,6 +79,14 @@ Default hotkey is `ctrl+win` = **Ctrl+Cmd** on the Mac keyboard.
       rekounts/hotkey_manager.py — the gate should prevent this by disabling
       the watchdog when preflight fails, so seeing it means the gate passed
       but polling still lies; report it).
+
+      > **The gate is weaker than it reads.** Measured on the GitHub
+      > `macos-latest` (arm64) runner, 2026-07-25:
+      > `CGPreflightListenEventAccess()` returns **True** with nobody having
+      > granted anything. So a passing preflight is *not* evidence that the poll
+      > can be believed, and this check is not ruled out by the gate — it is the
+      > reason this section is still first. (Recorded in
+      > `tests/test_macos_native.py::test_the_hotkey_watchdog_gate_is_derived_from_the_real_preflight`.)
 - [ ] Double-tap Ctrl+Cmd → hands-free latch; single tap stops it.
 - [ ] Lone tap while idle → hint toast, nothing pasted.
 - [ ] Change the hotkey to `F8` in Settings and repeat hold/tap. Also try a

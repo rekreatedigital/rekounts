@@ -250,7 +250,11 @@ def test_focus_out_discards_a_half_typed_combo(page):
 
 
 def test_hotkey_is_shown_prettified_but_stored_canonically(page, cfg):
-    assert page.hotkey.text() == "Ctrl + Win"
+    # The DISPLAY name of the "win" token is per-platform ("Win" on Windows,
+    # "Cmd" on a Mac keyboard — rekounts/ui/platform_text.py), so this asserts
+    # against the platform's own table rather than a hardcoded "Ctrl + Win".
+    # The point of the test is the stored/shown SPLIT, which holds on both.
+    assert page.hotkey.text() == pretty_hotkey("ctrl+win")
     assert cfg.get("hotkey") == "ctrl+win"
     assert pretty_hotkey("ctrl+alt+f9") == "Ctrl + Alt + F9"
     assert pretty_hotkey("page_up") == "Page Up"
