@@ -20,7 +20,9 @@ published images can't leak the machine they were captured on:
 
 * the microphone list (real device names) -> two generic placeholders;
 * the "Where your data lives" path (the sandbox temp dir) -> the generic
-  ``C:\\Users\\you\\AppData\\Roaming\\Rekounts`` a user would see.
+  ``C:\\Users\\you\\AppData\\Roaming\\Rekounts`` a user would see;
+* the **Processing** row -> hidden, because this script runs from source and
+  the packaged build the README is illustrating has no GPU stack in it.
 
 Everything else on screen is the app rendering its own state.
 
@@ -54,7 +56,7 @@ from PySide6 import QtCore, QtGui, QtWidgets  # noqa: E402
 from rekounts import paths, startup  # noqa: E402
 from rekounts.config import Config  # noqa: E402
 from rekounts.history import History  # noqa: E402
-from rekounts.ui import settings_page, theme  # noqa: E402
+from rekounts.ui import platform_text, settings_page, theme  # noqa: E402
 from rekounts.ui.dashboard import Dashboard  # noqa: E402
 from scripts.seed_history import SAMPLES  # noqa: E402
 
@@ -221,6 +223,12 @@ def main():
     settings_page.microphone_options = lambda: FAKE_MICS
     startup.is_enabled = lambda *a, **k: False
     startup.set_enabled = lambda *a, **k: None
+    # Capture the app as a DOWNLOADER sees it. This script necessarily runs
+    # from source, where the Processing row exists; the packaged build it
+    # illustrates has no GPU stack in it and so has no such row. Same reasoning
+    # as the fake mics and the generic data folder above — the published image
+    # must not show something that is only true of the capture machine.
+    platform_text.gpu_choice_applies = lambda *a, **k: False
 
     config = Config(path=SANDBOX / "Rekounts" / "config.json")
     history = History(path=SANDBOX / "Rekounts" / "history.db")
