@@ -359,6 +359,43 @@ def test_hallucination_filter_can_be_disabled():
     assert inserter.calls == ["Thank you."]   # not suppressed when disabled
 
 
+# The composite outro that reached a real transcript on 2026-07-25. The old
+# exact-match filter could not see it: it is three caption clauses glued
+# together and no single blocklist entry matched the whole string.
+OWNERS_PHANTOM = ("Thank you so much for watching this video, I hope you "
+                  "enjoyed it, see you in the next one.")
+
+
+def test_composite_youtube_outro_is_suppressed():
+    ctrl, rec, trans, inserter, states, results, notices, errors = build(
+        raw_text=OWNERS_PHANTOM)
+    ctrl.start_recording()
+    ctrl.stop_recording()
+    assert inserter.calls == []
+    assert results == []
+    assert any("no speech" in n.lower() for n in notices)
+
+
+def test_composite_outro_filter_can_be_disabled():
+    ctrl, rec, trans, inserter, states, results, notices, errors = build(
+        raw_text=OWNERS_PHANTOM, filter_hallucinations=False)
+    ctrl.start_recording()
+    ctrl.stop_recording()
+    assert inserter.calls == [OWNERS_PHANTOM]
+
+
+def test_genuine_outro_dictation_is_delivered():
+    """A user dictating a real sign-off keeps every word of it. Silently
+    deleting words someone actually said is worse than letting a phantom
+    through - they may not notice for hours."""
+    ctrl, rec, trans, inserter, states, results, notices, errors = build(
+        raw_text="Thanks for watching, talk soon.")
+    ctrl.start_recording()
+    ctrl.stop_recording()
+    assert inserter.calls == ["Thanks for watching, talk soon."]
+    assert results[0][3] is True
+
+
 def test_cancel_recording_discards_and_returns_to_idle():
     ctrl, rec, trans, inserter, states, results, notices, errors = build()
     ctrl.start_recording()

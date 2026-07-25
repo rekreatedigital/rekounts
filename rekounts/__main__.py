@@ -877,6 +877,9 @@ def _run():
     def beam_size_provider():
         return cfg.get("beam_size")
 
+    def filter_provider():
+        return cfg.get("filter_hallucinations")
+
     # Filled in as the UI comes up; see PendingApplies.
     pending = PendingApplies()
 
@@ -926,6 +929,10 @@ def _run():
         # replaces — there is no window in which it can run on captured values.
         _attach_provider(t, "language_provider", language_provider)
         _attach_provider(t, "beam_size_provider", beam_size_provider)
+        # The phantom-tail strip reads the SAME "Ignore phantom phrases" switch
+        # as the whole-clip filter in the controller, so turning it off turns
+        # off all of it.
+        _attach_provider(t, "filter_provider", filter_provider)
         return t
 
     def build_cleaner():
