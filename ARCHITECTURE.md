@@ -100,7 +100,9 @@ This replaced the old restart-on-save, which raced the single-instance mutex.
 | `startup.py` | Enable/disable/query **launch on login** (Windows `HKCU\...\Run` registry key, macOS `~/Library/LaunchAgents` plist); also purges the pre-rename `TalkativeAI` entry |
 | `paths.py` | Every per-user filesystem location in one place (`%APPDATA%\Rekounts` and its children), plus the pre-rename folder name |
 | `migrate.py` | One-time move of user state from `%APPDATA%\TalkativeAI` to `%APPDATA%\Rekounts`. Runs before logging and `Config()`, since both would otherwise create/read the new folder first. Marker-file completion, per-item atomic staging, copy-except-models, never overwrites, never deletes the old folder |
-| `ui/tray.py` | `TrayApp` — tray icon, menu (Dashboard, Scratchpad, Settings, Microphone, Language, Check for Updates, Help, Quit), toasts, the GitHub release check |
+| `ui/tray.py` | `TrayApp` — tray icon, menu (Dashboard, Scratchpad, Settings, Microphone, Language, Check for Updates, Help, Send Feedback, Quit), toasts, the GitHub release check |
+| `feedback.py` | The diagnostics block and the two prefilled links (GitHub issue, `mailto:`). Owns the scrubber that removes the home path, user name and machine name, and the "never collected" list. Qt-free, so a report can be built and tested without a display |
+| `ui/feedback_dialog.py` | `FeedbackDialog` — read-only review of that block with **Copy** and **Save** and deliberately no Send; the channel buttons hand a URL to the browser or the mail client |
 | `ui/branding.py` | Loads `assets/icon.ico` for the tray and every window, and sets the Windows AppUserModelID |
 | `ui/overlay.py` | `Overlay` — the frameless monochrome pill: idle / hover / recording (✕, waveform, ✓) / processing. Follows the monitor the mouse is on; never takes focus |
 | `sounds.py` | `Sounds` — non-blocking start/stop/error audio cues (stdlib `winsound`); silent when disabled |

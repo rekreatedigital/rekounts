@@ -146,7 +146,8 @@ class TrayApp:
                  on_open_dashboard=None, on_check_updates=None, on_help=None,
                  config=None, on_mic_changed=None, on_language_changed=None,
                  languages=None, notifications_enabled=None,
-                 on_open_scratchpad=None, scratchpad_enabled=None):
+                 on_open_scratchpad=None, scratchpad_enabled=None,
+                 on_send_feedback=None):
         """
         Backward-compatible: only the first three args are required.
 
@@ -161,6 +162,7 @@ class TrayApp:
           notifications_enabled()      -> live gate for EVERY toast (see notify())
           on_open_scratchpad()         -> open the sticky note
           scratchpad_enabled()         -> live gate for the Scratchpad entry
+          on_send_feedback()           -> override the default (the feedback dialog)
         """
         self.app = app
         self.config = config
@@ -231,6 +233,13 @@ class TrayApp:
         updates.triggered.connect(lambda _checked=False: check_updates())
         help_action = menu.addAction("Help")
         help_action.triggered.connect(on_help or self._open_help)
+
+        # Same shape as Check for Updates: the user asks, and the app opens
+        # something on their machine rather than posting anything. The dialog
+        # itself sends nothing — see rekounts/feedback.py.
+        feedback_action = menu.addAction("Send Feedback…")
+        send_feedback = on_send_feedback or self._open_feedback
+        feedback_action.triggered.connect(lambda _checked=False: send_feedback())
 
         menu.addSeparator()
         menu.addAction("Quit", on_quit)
@@ -417,6 +426,13 @@ class TrayApp:
 
     def _open_help_url(self):
         webbrowser.open(f"https://github.com/{_resolve_repo_slug()}#readme")
+
+    # ----------------------------------------------------------- feedback
+    def _open_feedback(self):
+        """Show the review dialog. Imported here, not at module top, so the
+        tray never drags the dialog in on a launch nobody clicks it on."""
+        from rekounts.ui.feedback_dialog import show_feedback
+        show_feedback(self.config)
 
     # -------------------------------------------------------------- toast
     def notify(self, message: str, url: str | None = None):

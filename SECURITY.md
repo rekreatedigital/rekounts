@@ -15,9 +15,13 @@ triggered by you, with one opt-in exception: **Settings → System → Check for
 updates automatically** (off by default) makes that same read-only API call
 once per launch.
 
-Opening a page in your web browser — **Help**, or clicking an update
-notification — is not counted here: the request is your browser's, and Rekounts
-makes none of its own.
+Opening a page in your web browser — **Help**, clicking an update
+notification, or **Send Feedback…** — is not counted here: the request is your
+browser's (or your mail client's), and Rekounts makes none of its own. Feedback
+carries a diagnostics block the app shows you first — versions and settings
+only, with paths, user name and machine name scrubbed out — and it is composed
+unsent, so nothing leaves until you send it yourself.
+[docs/privacy.md](docs/privacy.md) lists every moment one by one.
 
 ## Reporting a vulnerability
 

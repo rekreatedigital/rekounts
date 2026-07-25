@@ -61,11 +61,53 @@ NETWORK_MOMENTS = (
     ),
 )
 
-# Not network moments: your browser makes these requests, not Rekounts. Listed
-# so the difference stays deliberate rather than looking like an omission.
+class Handoff(NamedTuple):
+    """One place where Rekounts hands a URL to a program you already have.
+
+    Not a network moment: your browser or mail client makes any request, not
+    Rekounts, and what it opens is still unsent when you see it. Structured
+    like NetworkMoment so the test suite can hold every ``webbrowser.open``
+    in the package to an entry here, the same way it holds every ``urlopen``
+    to NETWORK_MOMENTS. Keep the two tuples separate — the published count
+    must only ever derive from NETWORK_MOMENTS.
+    """
+
+    key: str
+    module: str          # the module that initiates the hand-off
+    opens_in: str        # "browser" or "mail client"
+    summary: str         # how the docs refer to it
+
+
+# Not network moments: your browser or mail client makes these requests, not
+# Rekounts. Listed so the difference stays deliberate rather than an omission.
 BROWSER_HANDOFFS = (
-    "Tray menu → Help opens this project's README in your browser.",
-    "Clicking an update notification opens the release page in your browser.",
+    Handoff(
+        key="help-readme",
+        module="rekounts/ui/tray.py",
+        opens_in="browser",
+        summary="Tray menu → Help opens this project's README in your browser.",
+    ),
+    Handoff(
+        key="update-notification",
+        module="rekounts/ui/tray.py",
+        opens_in="browser",
+        summary="Clicking an update notification opens the release page in "
+                "your browser.",
+    ),
+    Handoff(
+        key="feedback-issue",
+        module="rekounts/ui/feedback_dialog.py",
+        opens_in="browser",
+        summary="Send Feedback… can open a prefilled GitHub issue in your "
+                "browser — shown to you first, sent only if you submit it.",
+    ),
+    Handoff(
+        key="feedback-email",
+        module="rekounts/ui/feedback_dialog.py",
+        opens_in="mail client",
+        summary="Send Feedback… can open a prefilled message in your mail "
+                "client, still unsent — you read it, then you decide.",
+    ),
 )
 
 _COUNT_WORDS = {1: "once", 2: "twice", 3: "three times", 4: "four times"}
@@ -92,6 +134,12 @@ def statement() -> str:
         joined = f"{joined}, and {moments[-1].summary}"
     else:
         joined = moments[-1].summary
+    handoff = ""
+    if BROWSER_HANDOFFS:
+        handoff = (" Help, update notifications and Send Feedback… make no "
+                   "request at all: they hand a page to your browser or a "
+                   "message to your mail client, already filled in and not "
+                   "yet sent.")
     return ("Rekounts runs entirely on this machine. It reaches the network "
-            f"exactly {count_word()}: {joined}. Your audio and your text never "
-            "leave this computer.")
+            f"exactly {count_word()}: {joined}.{handoff} Your audio and your "
+            "text never leave this computer.")

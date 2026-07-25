@@ -193,14 +193,30 @@ their own heading, because "your browser fetched a page you asked for" and
 Your voice, your transcripts, your history and your settings are never part of
 either of these.
 
-### Pages Rekounts opens in your browser
+### Pages Rekounts opens in your browser — or your mail client
 
-Two places hand a web address to your normal browser and stop there. Rekounts
-makes no request of its own, sends nothing, and never sees the answer — which is
-why they are not in the count above:
+Three places hand a web address to your normal browser — or a ready-to-read
+message to your mail client — and stop there. Rekounts makes no request of its
+own, sends nothing, and never sees the answer — which is why they are not in
+the count above:
 
 - **Help.** Tray menu → **Help** opens this project's README.
 - **An update notification.** Clicking one opens the release page.
+- **Send Feedback…** (tray menu, and Settings → Data & Privacy) shows you a
+  short diagnostics block first — app version, Windows version, Python version,
+  whether you run the installed build, and four settings: model, processing,
+  insertion mode and language. That is the whole list, shown in a window with
+  **Copy** and **Save** and deliberately **no Send button**. From there it can
+  open a **prefilled GitHub issue form** in your browser or a **prefilled
+  email** in your mail client — both arrive unsent; you read, edit, delete,
+  and nothing goes anywhere until *you* press submit or send.
+
+  Never included: your transcripts, your Scratchpad, your Dictionary, your
+  history, your microphone's name (which often contains a person's name), your
+  Windows user name, your machine name, and your home-folder path. If you tick
+  the optional box to attach the last few log lines, those are capped and the
+  paths in them are rewritten (`C:\Users\you\…` becomes `%USERPROFILE%\…`)
+  before you ever see them, let alone send them.
 
 ## Your clipboard
 
