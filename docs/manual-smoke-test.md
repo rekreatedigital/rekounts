@@ -96,6 +96,12 @@ applies on its own within a moment. Throughout this section the app must
       "um hello" → the "um" survives. Turn it back on.
 - [ ] **Insert text by** = keystrokes, dictate → text is typed
       character-by-character and your clipboard is untouched.
+- [ ] **Processing**: in the INSTALLED app (and on any Mac) there is no
+      Processing row in **General** at all, and nothing anywhere in Settings
+      mentions CUDA — that build has no GPU stack in it, so the choice could
+      only ever land on CPU. Running from source on Windows the row is there,
+      and the **Auto** label reads in full inside the dropdown rather than
+      being cut off mid-sentence.
 
 ## Settings — nothing deferred without saying so
 
@@ -131,9 +137,12 @@ All of these live in **Settings → Audio**, under the microphone.
 
 - [ ] **Sound effects** off → dictation start/stop cues go silent immediately
       (no restart); on → they come back.
-- [ ] With sound effects **off**, the **Cue volume** dropdown is greyed out and
-      says so, rather than looking live while changing nothing.
-- [ ] **Cue volume** = Loud → dictate → the very next cue is louder. Set it to
+- [ ] With sound effects **off**, the **Volume** dropdown is greyed out and says
+      so, rather than looking live while changing nothing.
+- [ ] With sound effects **on**, the **Volume** row has no explanation under it
+      at all — the row is self-evident and used to carry a sentence about
+      restarting that nobody was wondering about.
+- [ ] **Volume** = Loud → dictate → the very next cue is louder. Set it to
       Soft → the next cue is quieter. No restart at any point.
 - [ ] By ear: the start cue is a single short, low toot — noticeable if you
       listen for it, easy to ignore if you don't. The stop cue is the same but

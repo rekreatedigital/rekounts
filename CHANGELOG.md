@@ -9,6 +9,54 @@ there.
 
 ## [0.4.1] — 2026-07-25
 
+### Fixed: Settings now says only what is true for the person reading it
+
+Settings had a **Processing** row offering "Auto — use the GPU when it actually
+works", and telling you Auto "needs the CUDA libraries — see the README". If
+you downloaded Rekounts, that was never true for you. The installed app is
+built without any GPU support in it on purpose — smaller download, nothing to
+go wrong — so Auto has always quietly meant CPU there, and the row was sending
+people off to install graphics libraries the app could not have used. On a Mac
+it was doubly untrue: the speech engine has no Mac GPU support at all.
+
+The row is now shown only where the choice can actually change something:
+running from source, on Windows or Linux. Everywhere else it is gone, rather
+than sitting there labelled honestly and doing nothing. Nothing about your
+settings file changes — a `device` you set by hand is still read and still
+obeyed.
+
+That same row was also cut off mid-sentence in the dropdown ("Auto — use the
+GPU when it actually"). Every option in every dropdown is now checked against
+the real width of the control, so a label can't quietly lose its ending again.
+
+A few other lines were written for the person who built the app rather than
+the person using it, and have gone or been rewritten:
+
+- **Volume** (was "Cue volume") no longer says "Applies to the next cue — no
+  restart." Nobody choosing between Soft and Loud was worried about a restart.
+- **Catch the first word** is what the pre-roll buffer is called now. It is
+  what the setting does; "pre-roll buffer" was the name in the source code.
+- **Save dictation history** talks about your dictations, not about
+  `history.db`.
+- The **speech model** and **update check** rows dropped a clause each that
+  described the machinery instead of the outcome.
+
+The warnings that carry a real consequence are untouched — the pre-roll's
+"never written to disk", "never your transcripts" on the log, "Rekounts sends
+nothing itself", and both delete confirmations.
+
+### Fixed: macOS told you to enable an app that isn't in the list
+
+Running Rekounts from source on a Mac, a missing permission produced "Enable
+Rekounts under System Settings > Privacy & Security > Input Monitoring". macOS
+grants those permissions to the app that *launched* Rekounts — your terminal —
+so "Rekounts" is not in that list and cannot be added, and the reasonable
+conclusion is that the app is broken. It isn't.
+
+From source, the message now tells you to enable your terminal and warns
+outright that Rekounts will not appear in the list. The installed .app keeps
+the old wording, which was right for it all along.
+
 ### Fixed: phantom YouTube outros no longer reach your transcript
 
 Whisper was trained on a lot of YouTube captions, and when it hears silence or

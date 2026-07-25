@@ -245,7 +245,8 @@ These are in priority order and are exactly what
   Windows path already makes. Modifier-only combos (the default `Ctrl+Cmd`) and
   function keys are layout-independent.
 - **No GPU option.** The speech engine's only accelerator backend is NVIDIA
-  CUDA, so **Processing → Auto** and **CPU** do the same thing on a Mac.
+  CUDA, and there is no macOS build of it — so Settings shows no **Processing**
+  row on a Mac at all.
 - The default hotkey `ctrl+win` is **Ctrl+Cmd** on a Mac keyboard — the config
   token is shared across platforms; only the label differs.
 
@@ -386,20 +387,23 @@ dictation.
   Tagalog); the speech model — `small` (default, balanced, ~486 MB), `base`
   (fastest, ~148 MB), `medium` (most accurate offered, ~1.5 GB) — each size
   downloads once, the first time you pick it, from this project's own release
-  host (see the **Accuracy guide** below for how to choose); and
-  **Processing** — `CPU` (default) or `Auto`, which uses your NVIDIA GPU when
-  it can actually run there and quietly falls back to CPU otherwise.
+  host (see the **Accuracy guide** below for how to choose). A **Processing**
+  row (`CPU` / `Auto`) appears only when this run could actually use a GPU —
+  that is, from source on Windows or Linux. The installed app is a CPU-only
+  build and macOS has no CUDA at all, so there the row is simply not shown
+  rather than offering a choice that changes nothing. Your `device` setting in
+  `config.json` is read and obeyed either way.
 - **Audio** — microphone, with **Refresh** and a **Test** button (you want
   "Heard you clearly").
 - **Behavior** — insertion mode: `paste` (default; your clipboard is preserved)
-  or `keystroke` (types the characters; never touches the clipboard); live
-  typing (experimental — see the warning below); the text cleanup toggles
+  or `keystroke` (types the characters; never touches the clipboard); the
+  text cleanup toggles
   (remove fillers, auto-capitalize, fix punctuation spacing, remove repeated
   words and repeated short phrases — "I'm gonna I'm gonna" → "I'm gonna" — and
   **remove hedge phrases**, which drops "you know", "I mean", "like" and
   "right" only when commas mark them as asides, so "I like it" and "turn
-  right" are never touched); the pre-roll buffer; the maximum recording
-  length; and the phantom-phrase filter.
+  right" are never touched); **Catch the first word** (the pre-roll buffer);
+  the maximum recording length; and the phantom-phrase filter.
 - **System** — launch at login, sound effects, the on-screen pill, and tray
   notifications.
 - **Data & Privacy** — the dictation-history switch, **Clear all**, **Open
@@ -600,9 +604,12 @@ reason not to run `large-v3-turbo`.
 To turn it on, set **Processing → Auto** in Settings. Auto probes whether the
 GPU can *actually transcribe* — not just load a model, since a missing CUDA
 library only fails on the first real use — and silently falls back to CPU if it
-can't, so it's always safe to leave on. (The packaged `.exe` is a deliberately
-CPU-only build, so Auto simply stays on CPU there; GPU needs a from-source
-install.)
+can't, so it's always safe to leave on.
+
+**This needs a from-source install.** The packaged `.exe` deliberately excludes
+the whole CUDA stack (`Rekounts.spec`), so there is no GPU for Auto to find in
+it — which is why the **Processing** row is not shown in the installed app at
+all, rather than offering a switch that always lands on CPU.
 
 GPU needs the CUDA runtime libraries installed in the same environment. All
 three of these are required (cuBLAS depends on cudart, so leaving it out gives a
@@ -637,14 +644,18 @@ this raw-accuracy work.
 ## CPU vs GPU
 
 Transcription runs on **CPU by default**, which is fast enough for dictation
-with the `small` model on a modern machine. To use an NVIDIA GPU, set
-**Processing → Auto** in Settings (or `"device": "auto"` in `config.json`) — see
-the **Accuracy guide** above for what the GPU needs and how the safe fallback
-works.
+with the `small` model on a modern machine. To use an NVIDIA GPU, run from
+source and set **Processing → Auto** in Settings (or `"device": "auto"` in
+`config.json`) — see the **Accuracy guide** above for what the GPU needs and how
+the safe fallback works.
 
-**On a Mac there is no GPU path at all.** The speech engine (CTranslate2) has
-only a CUDA backend, so `auto` finds nothing to use and runs on the CPU — the
-Settings row says so rather than offering a switch that does nothing.
+**The Processing row is shown only where the choice can do something:** a
+from-source run on Windows or Linux. The installed app is a CPU-only build, and
+on a Mac the speech engine (CTranslate2) has only a CUDA backend, so `auto`
+finds nothing to use and runs on the CPU. In both cases the row is absent
+rather than present-and-inert. `"device"` in `config.json` is still read and
+still obeyed everywhere, so a config file moves between the two without
+surprises.
 
 ## Building the standalone app
 
