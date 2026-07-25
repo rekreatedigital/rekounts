@@ -817,8 +817,8 @@ class SettingsPage(QtWidgets.QWidget):
         self.filter_halluc = self._switch("filter_hallucinations")
         sec.add(SettingsRow(
             "Ignore phantom phrases", self.filter_halluc,
-            "Silence sometimes transcribes as “Thank you.” — dropped when it is "
-            "the entire result."))
+            "Silence sometimes transcribes as “Thanks for watching.” — dropped "
+            "when the model itself reports it heard no speech there."))
 
         self._body.addWidget(sec)
 

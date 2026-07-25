@@ -7,6 +7,52 @@ The version string lives in one place — `rekounts/__init__.py` — and
 everything else (`pyproject.toml`, the `.exe` file properties) reads it from
 there.
 
+## [Unreleased]
+
+### Fixed: phantom YouTube outros no longer reach your transcript
+
+Whisper was trained on a lot of YouTube captions, and when it hears silence or
+room tone it sometimes writes the thing those videos all end with. One of these
+landed in a real dictation:
+
+> "Thank you so much for watching this video, I hope you enjoyed it, see you in
+> the next one."
+
+Nobody said it. The app already had a filter for this and it missed, for two
+reasons. It compared the transcript against a fixed list of exact phrases, and
+that sentence is three caption clauses glued together — no single list entry
+matched it. And it only ever looked at the *whole* recording, so a phantom
+stuck onto the end of a genuine dictation could not be caught at all, which is
+exactly what happened.
+
+Both are fixed. The filter now recognises the caption *family* rather than a
+fixed list, and it reads the speech model's own confidence that a stretch of
+audio contained no speech — a number the app had been throwing away. A phantom
+tail is removed from the end of your dictation without touching the real words
+in front of it.
+
+The important half of this is what it does **not** do. Your words are never
+removed on a hunch. Nothing is deleted unless **both** of these are true: the
+model itself reports it heard no speech there, **and** the text is caption
+boilerplate in every clause. So "thanks for watching, talk soon" arrives
+intact, and if you dictate an actual YouTube outro on purpose, all of it
+arrives — measured, the same sentence spoken for real scores about 150× more
+speech-like than the hallucinated one. Turning **Ignore phantom phrases** off
+in Settings still turns off all of it.
+
+### Fixed: short dictations like "Thanks!" are no longer swallowed
+
+This one was already shipped, and it was the same root cause. If your whole
+dictation was a short pleasantry — "Thanks!", "Thank you.", "Ok thanks",
+"Bye.", "Thank you very much." — the app deleted it and told you to check your
+microphone. It was matching those words against a list without ever asking
+whether you had actually said them.
+
+Now it asks. Every one of those arrives, because the model reports it clearly
+heard speech; the identical words over silence still get dropped. Same for
+"Okay." on its own, "Thanks, bye.", "Thanks for listening.", "That's it for
+today." and "Thank you for joining us." — all real dictation, all delivered.
+
 ## [0.4.1] — 2026-07-25
 
 ### Fixed: scrolling the Settings page no longer changes your settings

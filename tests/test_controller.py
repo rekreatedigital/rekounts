@@ -1,8 +1,10 @@
 import numpy as np
+import pytest
 
 from rekounts.controller import AppController
 from rekounts.state_machine import DictationState
 from rekounts.text_cleaner import TextCleaner
+from rekounts.transcriber import Transcript
 
 
 class FakeRecorder:
@@ -333,13 +335,58 @@ def test_on_result_not_fired_on_empty_transcript():
 
 
 def test_hallucination_only_result_is_suppressed():
+    """A phantom needs the decoder's own no-speech evidence to be dropped -
+    0.9435 is the value measured on a silence-only clip."""
     ctrl, rec, trans, inserter, states, results, notices, errors = build(
-        raw_text="Thank you.")
+        raw_text=Transcript("Thank you.", 0.9435))
     ctrl.start_recording()
     ctrl.stop_recording()
     assert inserter.calls == []          # phantom phrase not inserted
     assert results == []                 # nothing saved to history
     assert any("no speech" in n.lower() for n in notices)
+
+
+def test_same_words_spoken_for_real_are_delivered():
+    """THE regression this half of the fix exists for. On master (and in the
+    first cut of this branch) a one-line "Thank you." dictation was deleted on
+    TEXT ALONE and the user got a misleading "check your microphone" notice.
+    Genuine speech measures no_speech_prob 0.0057."""
+    ctrl, rec, trans, inserter, states, results, notices, errors = build(
+        raw_text=Transcript("Thank you.", 0.0057))
+    ctrl.start_recording()
+    ctrl.stop_recording()
+    assert inserter.calls == ["Thank you."]
+    assert results[0][3] is True
+    assert notices == []
+
+
+@pytest.mark.parametrize("text", [
+    "Ok thanks", "Okay.", "Thanks, bye.", "Thank you for joining us.",
+    "Thanks for listening.", "That's it for today.", "Thank you and goodbye.",
+    "Thanks!", "Bye.", "Thank you very much.", "You", "Thanks a lot.",
+    "Captions by Sarah.", "Translation by the marketing team.",
+    "Please subscribe.", "See you in the next one.", "I hope you enjoyed it.",
+    "Thanks for watching.", "Okay, thanks.", "Well, thank you.",
+])
+def test_short_genuine_dictations_are_never_deleted(text):
+    """Short single-clause dictations are the dangerous case: they have no
+    ordinary clause to protect them, so only the evidence gate saves them."""
+    ctrl, rec, trans, inserter, states, results, notices, errors = build(
+        raw_text=Transcript(text, 0.0057))
+    ctrl.start_recording()
+    ctrl.stop_recording()
+    assert inserter.calls != [], f"deleted genuine speech: {text!r}"
+
+
+def test_no_evidence_never_deletes():
+    """A transcriber that returns a plain string (an older build, a test
+    double) supplies no evidence - and no evidence must never license a
+    deletion, however phantom-shaped the text looks."""
+    ctrl, rec, trans, inserter, states, results, notices, errors = build(
+        raw_text="Thanks for watching, see you in the next one.")
+    ctrl.start_recording()
+    ctrl.stop_recording()
+    assert inserter.calls == ["Thanks for watching, see you in the next one."]
 
 
 def test_hallucination_phrase_inside_real_sentence_is_kept():
@@ -353,10 +400,61 @@ def test_hallucination_phrase_inside_real_sentence_is_kept():
 
 def test_hallucination_filter_can_be_disabled():
     ctrl, rec, trans, inserter, states, results, notices, errors = build(
-        raw_text="Thank you.", filter_hallucinations=False)
+        raw_text=Transcript("Thank you.", 0.9435), filter_hallucinations=False)
     ctrl.start_recording()
     ctrl.stop_recording()
     assert inserter.calls == ["Thank you."]   # not suppressed when disabled
+
+
+# The composite outro that reached a real transcript on 2026-07-25. The old
+# exact-match filter could not see it: it is three caption clauses glued
+# together and no single blocklist entry matched the whole string.
+OWNERS_PHANTOM = ("Thank you so much for watching this video, I hope you "
+                  "enjoyed it, see you in the next one.")
+
+
+def test_composite_youtube_outro_is_suppressed_when_hallucinated():
+    """The bug this branch exists for - but only with the evidence that says it
+    WAS a hallucination. 0.87 is the value measured for a phantom tail."""
+    ctrl, rec, trans, inserter, states, results, notices, errors = build(
+        raw_text=Transcript(OWNERS_PHANTOM, 0.87))
+    ctrl.start_recording()
+    ctrl.stop_recording()
+    assert inserter.calls == []
+    assert results == []
+    assert any("no speech" in n.lower() for n in notices)
+
+
+def test_composite_youtube_outro_is_delivered_when_actually_spoken():
+    """The same 24 words, dictated by a human writing a video script, measured
+    at no_speech_prob 0.0057. This is what docs/manual-smoke-test.md asks a
+    person to check, and it must agree with this test."""
+    ctrl, rec, trans, inserter, states, results, notices, errors = build(
+        raw_text=Transcript(OWNERS_PHANTOM, 0.0057))
+    ctrl.start_recording()
+    ctrl.stop_recording()
+    assert inserter.calls == [OWNERS_PHANTOM]
+    assert results[0][3] is True
+
+
+def test_composite_outro_filter_can_be_disabled():
+    ctrl, rec, trans, inserter, states, results, notices, errors = build(
+        raw_text=Transcript(OWNERS_PHANTOM, 0.87), filter_hallucinations=False)
+    ctrl.start_recording()
+    ctrl.stop_recording()
+    assert inserter.calls == [OWNERS_PHANTOM]
+
+
+def test_genuine_outro_dictation_is_delivered():
+    """A user dictating a real sign-off keeps every word of it. Silently
+    deleting words someone actually said is worse than letting a phantom
+    through - they may not notice for hours."""
+    ctrl, rec, trans, inserter, states, results, notices, errors = build(
+        raw_text="Thanks for watching, talk soon.")
+    ctrl.start_recording()
+    ctrl.stop_recording()
+    assert inserter.calls == ["Thanks for watching, talk soon."]
+    assert results[0][3] is True
 
 
 def test_cancel_recording_discards_and_returns_to_idle():
