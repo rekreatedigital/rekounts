@@ -7,6 +7,56 @@ The version string lives in one place — `rekounts/__init__.py` — and
 everything else (`pyproject.toml`, the `.exe` file properties) reads it from
 there.
 
+## [Unreleased]
+
+### Fixed: when something goes wrong, the log now says so
+
+If the app misbehaved, `logs\rekounts.log` could be completely empty — which
+made every problem report a guessing game.
+
+- **Crashes are written down.** A failure inside the app's own event handling,
+  or on one of its background threads, used to leave no trace at all: with no
+  console window there was nowhere for the message to go. Both now land in
+  `rekounts.log`, with the full detail. A crash deep enough to take the whole
+  program down gets its own `logs\rekounts-crash.log`.
+- **The log no longer silently throws lines away.** If your microphone's name,
+  or your Windows username, contained a character outside your machine's
+  default character set — anything non-Latin, and plenty of accented Latin —
+  the affected line was not written at all, with no warning. Everything is
+  written now.
+
+### Fixed: a fragment of a dictation could reach the log
+
+If one of your Dictionary corrections matched a word the speech model had
+spelled with an unusual character, a few words of your transcript could be
+written into `rekounts.log`. The log is documented as never holding your
+transcripts, so this was a broken promise rather than a preference — it is
+fixed at the cause, and those corrections now apply properly instead of being
+skipped.
+
+### Changed: the Scratchpad is now in the privacy documentation, and clearable
+
+The Scratchpad saves your note automatically as you type, which
+[docs/privacy.md](docs/privacy.md) had never mentioned — and the note is *not*
+covered by **Save dictation history** or by deleting your history.
+
+- The privacy page now describes the note, where it is kept, and exactly what
+  the history switch does and does not cover.
+- New: **Settings → Data & Privacy → Clear note**, which asks first and then
+  empties the note and its file.
+- The note still survives turning the Scratchpad feature off. Turning a feature
+  off is not a request to delete what you wrote — clearing it is a separate,
+  deliberate action.
+
+### Fixed: three different answers to "how often does this app use the internet?"
+
+The Settings page said twice, the privacy page said three times, and the
+security policy said two. The answer is **twice** — the one-time speech-model
+download and the update check. Opening a page in your web browser (**Help**, or
+clicking an update notification) is your browser's request, not the app's, and
+is now described separately instead of being counted as a third. All three
+places are now generated from, or checked against, one list in the source.
+
 ## [0.4.0] — 2026-07-25
 
 ### Fixed: scrolling the Settings page no longer changes your settings

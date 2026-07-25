@@ -5,7 +5,9 @@ crash guard, the notification buffer that stops early messages being dropped,
 and the generation gate that stops a stale model reload winning a race. Each
 helper is deliberately Qt-free so it can be tested without a QApplication.
 """
+import faulthandler
 import logging
+import sys
 import threading
 
 import pytest
@@ -27,6 +29,23 @@ def preserve_root_logging():
     yield
     root.handlers[:] = handlers
     root.setLevel(level)
+
+
+@pytest.fixture(autouse=True)
+def preserve_crash_hooks():
+    """main() installs process-global crash hooks; put them back.
+
+    Autouse because the hooks go in near the top of main(), so every test in
+    this module that reaches it leaves sys.excepthook and threading.excepthook
+    pointing at handlers built here — and a later test's unhandled exception
+    would then be routed by a handler this one owns.
+    """
+    hooks = sys.excepthook, threading.excepthook
+    enabled = faulthandler.is_enabled()
+    yield
+    sys.excepthook, threading.excepthook = hooks
+    if enabled:
+        faulthandler.enable()          # back to pytest's stderr, not a tmp file
 
 
 # --- finding 1: setup_logging outside the crash guard ---------------------

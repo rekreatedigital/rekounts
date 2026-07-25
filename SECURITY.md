@@ -2,13 +2,22 @@
 
 Rekounts is a local desktop app (Windows today; a macOS port is code-complete
 pending hardware verification). There is no server component, no account
-system and no telemetry — your audio and text stay on the machine. The attack
-surface is the app itself plus its two network moments: the one-time speech-model
-download from **this project's own GitHub release host** (never Hugging Face —
-see [docs/privacy.md](docs/privacy.md)), and the read-only GitHub API call behind
-**Check for Updates**. Both are triggered by you, with one opt-in exception:
-**Settings → System → Check for updates automatically** (off by default) makes
-that same read-only API call once per launch.
+system and no telemetry — your audio and text stay on the machine.
+
+<!-- network-moments: 2 (source of truth: rekounts/network_facts.py — keep this
+     marker, tests/test_network_claims.py checks the number against the code) -->
+
+The attack surface is the app itself plus the network twice: the one-time
+speech-model download from **this project's own GitHub release host**
+`github.com` (never Hugging Face — see [docs/privacy.md](docs/privacy.md)), and
+the read-only `api.github.com` call behind **Check for Updates**. Both are
+triggered by you, with one opt-in exception: **Settings → System → Check for
+updates automatically** (off by default) makes that same read-only API call
+once per launch.
+
+Opening a page in your web browser — **Help**, or clicking an update
+notification — is not counted here: the request is your browser's, and Rekounts
+makes none of its own.
 
 ## Reporting a vulnerability
 

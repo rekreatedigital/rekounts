@@ -117,8 +117,28 @@ def _repeat_length(out, tokens, i):
     return 0
 
 
+# Prefix for the per-rule group names build_replacements emits. Must be a valid
+# Python identifier start, and must not collide with anything a user could put
+# in the dictionary — group names come from this counter, never from their text.
+_GROUP = "rk"
+
+
 def build_replacements(pairs):
     """Compile (sounds_like, correct_word) pairs into one alternation regex.
+
+    Returns ``(pattern, lookup)`` where lookup is keyed by GROUP NAME, so the
+    caller reads the answer off the match object rather than turning the matched
+    text back into a dictionary key.
+
+    That indirection is the point. Keying by ``matched.lower()`` looked
+    equivalent and was not: ``re.IGNORECASE`` uses Unicode simple case folding,
+    whose equivalence classes are wider than ``str.lower()``. Three BMP
+    characters — U+017F LONG S, U+0130 CAPITAL I WITH DOT ABOVE, U+0131 DOTLESS
+    I — match a plain s/i under IGNORECASE but do not lower() to one, so a rule
+    for "sam altman" could match "ſam altman" and then miss its own key. The
+    KeyError that followed carried the matched span, which is a fragment of the
+    user's dictation, into a log file that promises never to hold one. Naming
+    the alternatives removes the lookup, and with it the whole failure mode.
 
     One combined pattern means a single left-to-right pass, so a replacement can
     never be re-matched by a later rule (a -> b, b -> c must not yield c).
@@ -126,22 +146,26 @@ def build_replacements(pairs):
     Word boundaries use lookarounds rather than \\b so multi-word phrases whose
     edges aren't word characters still anchor correctly.
     """
-    cleaned = []
+    # Deduplicated first, keyed the way the old lookup was: a dictionary holding
+    # the same misheard form twice keeps the later correction, and only one
+    # alternative is emitted for it.
+    cleaned = {}
     for heard, correct in pairs or ():
         if not isinstance(heard, str) or not isinstance(correct, str):
             continue
         heard = " ".join(heard.split())
         correct = correct.strip()
         if heard and correct:
-            cleaned.append((heard, correct))
+            cleaned[heard.lower()] = (heard, correct)
     if not cleaned:
         return None, {}
-    cleaned.sort(key=lambda p: len(p[0]), reverse=True)
+    entries = sorted(cleaned.values(), key=lambda p: len(p[0]), reverse=True)
     # Whitespace inside a phrase matches any run of whitespace, so "sounds like"
     # still matches a transcript that came out as "sounds  like".
-    alts = [r"\s+".join(re.escape(w) for w in heard.split()) for heard, _ in cleaned]
+    alts = [f"(?P<{_GROUP}{i}>" + r"\s+".join(re.escape(w) for w in heard.split()) + ")"
+            for i, (heard, _) in enumerate(entries)]
     pattern = re.compile(r"(?<!\w)(?:" + "|".join(alts) + r")(?!\w)", re.IGNORECASE)
-    lookup = {" ".join(heard.lower().split()): correct for heard, correct in cleaned}
+    lookup = {f"{_GROUP}{i}": correct for i, (_, correct) in enumerate(entries)}
     return pattern, lookup
 
 
@@ -207,21 +231,35 @@ class TextCleaner:
 
     def _apply_replacements(self, text: str) -> str:
         """Swap each dictionary word's misheard form for its correct spelling.
-        Never raises: a broken provider must not cost the user their dictation."""
+        Never raises: a broken provider must not cost the user their dictation.
+
+        Split into two guarded steps because they can say different amounts. The
+        first has not seen the transcript — a provider that cannot read the
+        dictionary, or a pattern that will not compile, is a real problem worth
+        naming in full. The second is standing on the user's words, so it
+        reports the exception TYPE and nothing else: an exception's message is
+        written by whatever raised it and can quote the text it choked on, which
+        is exactly how a KeyError used to put a phrase from a dictation into a
+        log file that promises never to hold one. build_replacements no longer
+        has a lookup that can miss, so this is the belt to that fix's braces —
+        it closes the whole class rather than the one instance.
+        """
         provider = self.replacements_provider
         if provider is None:
             return text
         try:
             pattern, lookup = build_replacements(provider())
-            if pattern is None:
-                return text
-            return pattern.sub(
-                lambda m: _apply_case(
-                    m.group(0), lookup[" ".join(m.group(0).lower().split())]),
-                text,
-            )
         except Exception as e:
-            log.warning("dictionary replacements failed (ignored): %s", e)
+            log.warning("dictionary replacements unavailable (ignored): %s", e)
+            return text
+        if pattern is None:
+            return text
+        try:
+            return pattern.sub(
+                lambda m: _apply_case(m.group(0), lookup[m.lastgroup]), text)
+        except Exception as e:
+            log.warning("dictionary replacements failed (ignored): %s",
+                        type(e).__name__)
             return text
 
     def _collapse_repeats(self, text: str) -> str:

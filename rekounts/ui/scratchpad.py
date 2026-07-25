@@ -351,7 +351,7 @@ class Scratchpad(QtWidgets.QWidget):
 
     # Public, thread-safe entry points.
     _append_sig = QtCore.Signal(str)
-    _cmd = QtCore.Signal(str)          # "open" | "hide" | "enable" | "disable"
+    _cmd = QtCore.Signal(str)   # "open"|"hide"|"enable"|"disable"|"clear"
 
     # How long after the last keystroke (or move/resize) the note is written.
     SAVE_DELAY_MS = 700
@@ -482,6 +482,21 @@ class Scratchpad(QtWidgets.QWidget):
 
     def is_enabled(self) -> bool:
         return self._enabled
+
+    @QtCore.Slot()
+    def clear_note(self):
+        """Throw the note away, on screen and on disk. Thread-safe.
+
+        This is what Settings → Data & Privacy → **Clear note** calls. It has to
+        go through the pad rather than deleting scratchpad.json underneath it:
+        an open pad autosaves on a pause in typing, so a file cleared behind its
+        back would be written straight back out with the text still in it.
+
+        Deliberately separate from the Scratchpad on/off switch. That switch
+        hides a feature; this one deletes what you wrote. Only one of them
+        should be able to lose your words, and only when you asked it to.
+        """
+        self._cmd.emit("clear")
 
     def wants_dictation(self) -> bool:
         """Should the next dictation land here rather than in the focused app?
@@ -625,6 +640,17 @@ class Scratchpad(QtWidgets.QWidget):
             return
         if cmd == "hide":
             self.hide()
+            return
+        if cmd == "clear":
+            # The timer first: a pending autosave from before the clear would
+            # otherwise fire afterwards and write the old note back.
+            self._save_timer.stop()
+            self._loading = True          # emptying the editor is not an edit
+            try:
+                self.edit.clear()
+            finally:
+                self._loading = False
+            self.flush()                  # persist the empty note now, not in 700ms
             return
         if cmd == "open":
             if not self._enabled:
