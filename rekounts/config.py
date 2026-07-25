@@ -65,9 +65,12 @@ DEFAULTS = {
     # is far longer than a normal dictation but still bounds the worst case; the
     # app warns ~30s before it fires. Set 0 to disable the cap.
     "max_recording_seconds": 600,
-    # Drop Whisper's silence/noise hallucinations ("Thank you.", "Thanks for
-    # watching.") but only when the WHOLE result is a known phantom phrase, so a
-    # genuine sentence that merely starts that way is untouched.
+    # Drop Whisper's silence/noise hallucinations - the YouTube-caption outros
+    # ("Thanks for watching, see you in the next one.") it was trained on. Two
+    # gates, both required before anything is removed: the transcript (or the
+    # trailing segment) must be caption boilerplate in EVERY clause, and for a
+    # tail the decoder must itself report it heard no speech there. A genuine
+    # sentence that merely starts that way is untouched.
     "filter_hallucinations": True,
     # Beam search width. 1 = greedy (fastest); 5 = noticeably more accurate for a
     # modest CPU cost. Accuracy matters more than ~100 ms for dictation.

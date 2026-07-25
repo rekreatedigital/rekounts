@@ -7,6 +7,38 @@ The version string lives in one place — `rekounts/__init__.py` — and
 everything else (`pyproject.toml`, the `.exe` file properties) reads it from
 there.
 
+## [Unreleased]
+
+### Fixed: phantom YouTube outros no longer reach your transcript
+
+Whisper was trained on a lot of YouTube captions, and when it hears silence or
+room tone it sometimes writes the thing those videos all end with. One of these
+landed in a real dictation:
+
+> "Thank you so much for watching this video, I hope you enjoyed it, see you in
+> the next one."
+
+Nobody said it. The app already had a filter for this and it missed, for two
+reasons. It compared the transcript against a fixed list of exact phrases, and
+that sentence is three caption clauses glued together — no single list entry
+matched it. And it only ever looked at the *whole* recording, so a phantom
+stuck onto the end of a genuine dictation could not be caught at all, which is
+exactly what happened.
+
+Both are fixed. The filter now recognises the caption *family* rather than a
+fixed list, and it reads the speech model's own confidence that a stretch of
+audio contained no speech — a number the app had been throwing away. A phantom
+tail is removed from the end of your dictation without touching the real words
+in front of it.
+
+The important half of this is what it does **not** do. Your words are never
+removed on a hunch: text only goes if it is caption boilerplate in *every*
+clause **and** the model itself reports it heard no speech there. So
+"thanks for watching, talk soon" arrives intact, and if you dictate an actual
+YouTube outro on purpose, all of it arrives — measured, the same sentence
+spoken for real scores about 150× more speech-like than the hallucinated one.
+Turning **Ignore phantom phrases** off in Settings still turns off all of it.
+
 ## [0.4.1] — 2026-07-25
 
 ### Fixed: scrolling the Settings page no longer changes your settings

@@ -45,6 +45,14 @@ to dictate."** (First launch is slower while the speech model loads.)
       *"No speech detected — check your microphone selection/volume."*
 - [ ] Stay silent through a whole recording. → the hallucination filter drops
       Whisper's "Thank you." / "Thanks for watching." phantoms; nothing typed.
+- [ ] Dictate a normal sentence, then stay silent for ~20 s before stopping.
+      → your sentence arrives, with no phantom outro glued onto the end.
+- [ ] Dictate an outro you *mean*: "thanks for watching, talk soon" — and a
+      whole YouTube sign-off, "thank you so much for watching this video, I
+      hope you enjoyed it, see you in the next one." → **both arrive in full**.
+      Losing real words here is worse than letting a phantom through.
+- [ ] Turn **Ignore phantom phrases** off, stay silent through a recording.
+      → the phantom is inserted; off really means off.
 - [ ] **Clipboard preservation** (paste mode): copy an image or a file in
       Explorer, dictate, then paste (Ctrl+V) elsewhere → your **original**
       clipboard content comes back, not just plain text.
