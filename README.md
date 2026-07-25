@@ -10,8 +10,10 @@ Your voice never leaves your machine.
 
 > **Windows 10/11** is the supported, downloadable version. **macOS 12+ can run
 > it from source** — every platform seam has a real mac implementation, but no
-> download ships and nothing has yet been confirmed on a physical Mac. See
-> [Running on macOS](#running-on-macos) before you try it. No Linux version.
+> download ships and nothing has yet been confirmed on a physical Mac. If you
+> just want to try it on your Mac, start at
+> **[the macOS quickstart](docs/macos-quickstart.md)**; the engineering picture
+> is in [Running on macOS](#running-on-macos). No Linux version.
 
 - **One hotkey**: hold `Ctrl+Win` to talk, double-tap it to go hands-free.
 - **Local speech**: faster-whisper runs on your own CPU. No account, no cloud.
@@ -111,6 +113,16 @@ python -m venv .venv
 
 ## Running on macOS
 
+> **Just want to dictate on your MacBook?** →
+> **[docs/macos-quickstart.md](docs/macos-quickstart.md)** is the same thing
+> written for a person rather than an engineer: eight numbered steps, what you
+> should see after each one, and the permission trap spelled out. If it goes
+> wrong, [docs/macos-help-prompt.md](docs/macos-help-prompt.md) is a block to
+> paste into whatever AI you use, so it can help without knowing this project.
+>
+> The rest of this section is the engineering picture — what is implemented,
+> what is genuinely unknown, and why there is no download.
+
 **Status: experimental, from source only, and not yet confirmed on a physical
 Mac.** Read that as written. The macOS port is complete in the sense that every
 platform-specific piece has a real mac implementation — pasting via Quartz
@@ -127,8 +139,11 @@ does nothing because a permission was never granted is worse than no `.app`.
 
 ### Setup
 
-You need **macOS 12 (Monterey) or newer**, Apple Silicon or Intel, and Python
-3.11+ (`brew install python@3.12`, or python.org).
+The terse version; [the quickstart](docs/macos-quickstart.md) is the same thing
+step by step, for someone who has not done this before.
+
+You need **macOS 12 (Monterey) or newer** and Python 3.11+
+(`brew install python@3.12`, or python.org).
 
 ```sh
 git clone https://github.com/rekreatedigital/rekounts.git && cd rekounts
@@ -137,6 +152,11 @@ pip install -r requirements.txt      # ~800 MB, once
 python -m pytest -q                  # sanity check: expect all green
 python -m rekounts                   # or: python launch.py
 ```
+
+CI installs that dependency set on an **Apple Silicon** runner on every push, in
+about 23 seconds. **Intel has never been installed by CI or by hand**, so it is
+untested rather than known-good — if you are on one, whether `pip install`
+even completes is itself a useful data point.
 
 The first launch downloads the speech model once (~486 MB for the default
 `small`) to `~/Library/Application Support/Rekounts/models/`. After that it runs
@@ -151,8 +171,14 @@ open the Hub.
 
 macOS gates each of the app's three core abilities behind a separate consent,
 and **denies them silently** — no dialog, no error, the events simply never
-arrive. Rekounts checks at startup and names any that are missing, so a missing
-permission never looks like a broken app.
+arrive. Rekounts checks at startup and names any it can see is missing, so that
+a missing permission does not just look like a broken app.
+
+That check is weaker than it reads, and the weakness is measured rather than
+theoretical: on the `macos-latest` CI runner
+`CGPreflightListenEventAccess()` returns `True` with nobody having granted
+anything ([MACOS-TESTING.md §2](MACOS-TESTING.md)). So **no warning is not
+evidence that Input Monitoring is granted** — grant it either way.
 
 | Consent | What stops working without it | Where |
 | --- | --- | --- |
@@ -169,7 +195,10 @@ permission never looks like a broken app.
 >
 > * The entry you tick under Input Monitoring and Accessibility is **Terminal**
 >   (or iTerm2, or VS Code if you run it from an integrated terminal) — you will
->   look for "Rekounts" in those lists and it will not be there.
+>   look for "Rekounts" in those lists and it will not be there. The app's own
+>   startup notice says *"Enable Rekounts under…"*, which is the right wording
+>   for the packaged `.app` and the wrong wording for a from-source run
+>   (`rekounts/permissions.py`); read it as "enable your terminal".
 > * Everything you run from that terminal afterwards inherits the same grants.
 >   That is a real, permanent widening of what a shell on your Mac may do, and
 >   it is worth being deliberate about — consider a dedicated terminal app for
@@ -218,6 +247,11 @@ These are in priority order and are exactly what
   CUDA, so **Processing → Auto** and **CPU** do the same thing on a Mac.
 - The default hotkey `ctrl+win` is **Ctrl+Cmd** on a Mac keyboard — the config
   token is shared across platforms; only the label differs.
+
+If you get stuck, [docs/macos-help-prompt.md](docs/macos-help-prompt.md) is a
+self-contained block to paste into any AI assistant — it carries the setup, the
+three permissions, the terminal-attribution trap and the known-unknowns above,
+so the assistant can diagnose without this repo in front of it.
 
 If you do try it, the most useful thing you can send back is a filled-in
 [MACOS-TESTING.md](MACOS-TESTING.md) with

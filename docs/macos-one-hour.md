@@ -65,6 +65,9 @@ pip install -r requirements.txt          # ~800 MB
 python -m pytest -q                      # expect green; if not, stop and report
 ```
 
+([macos-quickstart.md](macos-quickstart.md) is the unhurried version of the same
+setup, if the Mac's owner is doing this part rather than you.)
+
 Then two setup choices that buy back minutes:
 
 * **Use a terminal you do not otherwise use.** Running from source grants Input
@@ -72,8 +75,10 @@ Then two setup choices that buy back minutes:
   from it inherits them. Terminal.app while you normally live in iTerm, say.
 * **Set the model to `base` before the first launch** — edit
   `~/Library/Application Support/Rekounts/config.json` after the first run, or
-  just accept one `small` download (~486 MB). `base` is ~75 MB and downloads in
-  seconds. Accuracy is not what this hour is testing.
+  just accept one `small` download (~486 MB). `base` is ~148 MB, a third of the
+  wait. (Both figures are the manifest's own in `rekounts/models.py`; this line
+  used to say 75 MB for `base`, which was never right.) Accuracy is not what
+  this hour is testing.
 
 Grant the two permissions up front, because each one costs a relaunch:
 

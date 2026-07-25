@@ -41,8 +41,14 @@ python -m pytest -q          # expect: all green, 0 failures
 python launch.py             # or: python -m rekounts
 ```
 
-First launch downloads the Whisper model (~75 MB for `base`) to
-`~/Library/Application Support/Rekounts/models/`.
+First launch downloads the Whisper model to
+`~/Library/Application Support/Rekounts/models/` — ~486 MB for the default
+`small`, or ~148 MB if you switch to `base` first. (Sizes are the manifest's own
+in `rekounts/models.py`; this file used to say 75 MB, which was never right.)
+
+Never done this before, or handing it to someone who hasn't?
+[docs/macos-quickstart.md](docs/macos-quickstart.md) is the same setup written
+out step by step.
 
 > **Terminal note:** when running from source, macOS attributes permissions to
 > the TERMINAL (Terminal.app/iTerm), not to "Rekounts". Grant the prompts to
