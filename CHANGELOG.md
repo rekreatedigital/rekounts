@@ -7,7 +7,7 @@ The version string lives in one place — `rekounts/__init__.py` — and
 everything else (`pyproject.toml`, the `.exe` file properties) reads it from
 there.
 
-## [0.4.1] — 2026-07-25
+## [0.4.2] — 2026-07-25
 
 ### Fixed: Settings now says only what is true for the person reading it
 
@@ -132,8 +132,9 @@ You can now tell the developer that something broke, from the tray menu
 (**Send Feedback…**) or from Settings → **Data & Privacy**.
 
 There is still no server, and there never will be. The window that opens shows
-you a short diagnostics block — app version, Windows version, Python version,
-whether this is the installed build, and four settings (model, processing,
+you a short diagnostics block — app version, Windows version, Python and Qt
+versions, whether this is the installed build, and four settings (model,
+processing,
 insertion mode, language) — and then offers two ways to send it, because not
 everyone has a GitHub account:
 
@@ -235,7 +236,7 @@ faking them, `assets/icon.icns` and `packaging/entitlements.plist` are written,
 and [docs/macos-one-hour.md](docs/macos-one-hour.md) is the ordered list of what
 to check first on a borrowed Mac.
 
-## [0.4.0] — 2026-07-25 (built, never published — superseded by 0.4.1 the same day)
+## [0.4.0] — 2026-07-25 (built, never published — superseded by 0.4.2 the same day)
 
 ### Fixed: long dictations no longer arrive scrambled
 

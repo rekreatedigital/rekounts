@@ -232,7 +232,7 @@ All of these live in **Settings → Audio**, under the microphone.
 - [ ] `%APPDATA%\Rekounts\logs\rekounts.log` ends with a
       `Rekounts started (device=..., hotkey=...)` line and no tracebacks.
 
-## Upgrading from TalkativeAI (one-time, v0.3.0 only)
+## Upgrading from TalkativeAI (one-time, on the first run after the rename)
 
 Do these on a machine — or a spare Windows user profile — that still has a real
 `%APPDATA%\TalkativeAI` folder. **Back that folder up first.**
@@ -280,7 +280,7 @@ build.bat
       no traceback. (A startup crash usually means the Qt/CTranslate2 import
       order or the duplicated `msvcp140.dll` — see the spec's comments.)
 - [ ] The tray icon appears (check the hidden-icons `^` flyout) and its menu has
-      all seven items.
+      all nine items.
 - [ ] The pill appears and follows the mouse between monitors.
 - [ ] **Open Dashboard** opens the Hub and renders all five pages.
 - [ ] A full dictation works: hold Ctrl+Win, speak, release → text inserted, and

@@ -109,8 +109,8 @@ KNOWN-UNKNOWN BEHAVIOURS (this app has never been run on real Mac hardware)
   * The startup warnings about missing permissions may not appear at all —
     macOS has been observed reporting Input Monitoring as granted when it
     wasn't. So "no warning" does NOT mean "permission is fine".
-  * Nothing on a Mac uses the GPU; the Processing "Auto" setting does nothing
-    and is not the problem.
+  * Nothing on a Mac uses the GPU, and Settings shows no Processing row at
+    all — so that is not the problem.
 If a dictation can't be delivered, that's not data loss: the transcript is still
 saved in the app's own Dashboard (menu-bar icon > Open Dashboard).
 

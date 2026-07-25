@@ -295,6 +295,8 @@ Right-click the tray icon:
   actually something newer. Either way it downloads nothing and installs
   nothing; you decide.
 - **Help** — opens this README in your browser.
+- **Send Feedback…** — opens a prefilled GitHub issue or email, already
+  written and not yet sent (below).
 - **Quit**.
 
 ## The Scratchpad
@@ -403,13 +405,15 @@ dictation.
   words and repeated short phrases — "I'm gonna I'm gonna" → "I'm gonna" — and
   **remove hedge phrases**, which drops "you know", "I mean", "like" and
   "right" only when commas mark them as asides, so "I like it" and "turn
-  right" are never touched); **Catch the first word** (the pre-roll buffer);
-  the maximum recording length; and the phantom-phrase filter.
+  right" are never touched); **Paste long dictations**, which routes a long
+  transcript through the clipboard because typing one out arrives mangled;
+  **Catch the first word** (the pre-roll buffer); the maximum recording
+  length; and the phantom-phrase filter.
 - **System** — launch at login, the on-screen pill, the **Scratchpad**, tray
   notifications, and the automatic update check.
-- **Data & Privacy** — the dictation-history switch, **Clear all**, **Open
-  folder** shortcuts to where your data lives and to the diagnostic log, and
-  **Send feedback…**.
+- **Data & Privacy** — the dictation-history switch, **Clear all**,
+  **Clear note…** for the Scratchpad, **Open folder** shortcuts to where your
+  data lives and to the diagnostic log, and **Send feedback…**.
 
 Only a few tuning knobs remain config-file-only — edit
 `%APPDATA%\Rekounts\config.json` and relaunch: `beam_size` (transcription
@@ -668,7 +672,7 @@ One run produces everything a release needs, in `dist\`:
 
 | | |
 | --- | --- |
-| `Rekounts\Rekounts.exe` | the app (~350 MB — it bundles Python, Qt and the speech engine) |
+| `Rekounts\Rekounts.exe` | the app (~380 MB — it bundles Python, Qt and the speech engine) |
 | `Rekounts-<version>-win64.zip` | the portable download |
 | `Rekounts-Setup-<version>.exe` | the installer |
 
@@ -726,7 +730,7 @@ model you are adding; `--dry-run` does everything except upload.
 ## Development
 
 ```bat
-.venv\Scripts\python -m pytest        :: 400+ unit tests
+.venv\Scripts\python -m pytest        :: 1,300+ unit tests
 ```
 
 CI installs `requirements-test.txt` (a much smaller set than the runtime

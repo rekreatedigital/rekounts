@@ -126,7 +126,7 @@ Now check the install is sound:
 QT_QPA_PLATFORM=offscreen python -m pytest -q
 ```
 
-**You should see:** a line like `1167 passed, 20 skipped`. Both numbers will
+**You should see:** a line like `1330 passed, 20 skipped`. Both numbers will
 differ from a Windows run and both grow over time — the Mac-only tests run here
 and the Windows-only ones skip, which is exactly right. What matters is that it
 does **not** say `failed`. If it does, stop here and
@@ -280,12 +280,12 @@ information.
 
 ## A few things worth knowing
 
-- **Leave Processing on `CPU`.** In Settings there is a **Processing** dropdown
-  with an `Auto` option. On a Mac it does nothing — the speech engine can only
-  use NVIDIA graphics cards, which no Mac has. Your Mac's own chip is not an
-  option, and `Auto` just quietly runs on the CPU anyway.
+- **There is no GPU setting, and that is deliberate.** The speech engine only
+  accelerates on NVIDIA graphics cards, which no Mac has — your Mac's own chip
+  is not an option — so Settings shows no **Processing** row at all rather than
+  a choice that could not change anything. Dictation runs on the CPU.
 - **If it feels slow**, open the Hub (menu bar → **Open Dashboard**) →
-  **Settings** → **Model** and pick `base`. It is a smaller download (~148 MB),
+  **Settings** → **Speech model** and pick `base`. It is a smaller download (~148 MB),
   noticeably faster, and slightly less accurate. `small` is the default because
   it is the better trade on most machines.
 - **The hotkey** is written `Ctrl+Win` in some places, because Rekounts stores
@@ -295,7 +295,7 @@ information.
   [privacy.md](privacy.md) for exactly what is stored where.
 - **Your stuff lives in** `~/Library/Application Support/Rekounts/` — settings,
   history, the speech model and the log. Deleting the `rekounts` folder from
-  the `rekounts` folder removes the app but not that.
+  your home folder removes the app but not that.
 
 ---
 

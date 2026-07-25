@@ -34,7 +34,6 @@ Everything lives in `%APPDATA%\Rekounts` (on macOS:
 | `logs\rekounts.log` | A rotating diagnostic log (max 1 MB, 3 backups). It records startup, model loading, errors, and audio *durations* — **not** your transcripts. |
 | `logs\rekounts-crash.log` | Empty unless the app has crashed hard enough to take the whole process down. It holds the native stack trace of that crash and nothing else — no text, no audio, no settings. Delete it whenever you like. |
 | `scratchpad.json` | **Your Scratchpad note**, saved automatically. See [The Scratchpad](#the-scratchpad) below — this one holds text you wrote or dictated, and it is not covered by the dictation-history switch. |
-
 | `models\<name>\` | The downloaded speech model (~148 MB for `base`, ~486 MB for `small`, ~1.5 GB for `medium`). Four plain files per model — delete a folder to reclaim the space; it is re-downloaded only if you select that model again. |
 
 A few things live outside that folder, and all of them belong to the *program*
@@ -109,7 +108,7 @@ having decided to put it there.
 It is saved to `%APPDATA%\Rekounts\scratchpad.json`, as the note's rich text
 (bold, bullets and so on, which is why it is HTML rather than plain text) plus
 the window's last position. It is a plain file — open it and read it. It never
-leaves your machine; nothing above in [When the app touches the
+leaves your machine; nothing below in [When the app touches the
 network](#when-the-app-touches-the-network) reads or sends it.
 
 **Clearing it:** Settings → Data & Privacy → **Clear note**, which asks first
@@ -203,8 +202,9 @@ the count above:
 - **Help.** Tray menu → **Help** opens this project's README.
 - **An update notification.** Clicking one opens the release page.
 - **Send Feedback…** (tray menu, and Settings → Data & Privacy) shows you a
-  short diagnostics block first — app version, Windows version, Python version,
-  whether you run the installed build, and four settings: model, processing,
+  short diagnostics block first — app version, Windows version, Python and Qt
+  versions, whether you run the installed build, and four settings: model,
+  processing,
   insertion mode and language. That is the whole list, shown in a window with
   **Copy** and **Save** and deliberately **no Send button**. From there it can
   open a **prefilled GitHub issue form** in your browser or a **prefilled
