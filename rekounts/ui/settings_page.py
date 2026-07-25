@@ -21,6 +21,7 @@ from rekounts.device_utils import classify_level, resolve_input_device
 from rekounts.hotkey_manager import DEFAULT_HOTKEY, is_valid_hotkey
 from rekounts.languages import LANGUAGES
 from rekounts.ui import theme
+from rekounts.ui.wheel_guard import guard_wheel
 
 log = logging.getLogger(__name__)
 
@@ -309,6 +310,13 @@ class SettingsRow(QtWidgets.QWidget):
         else:
             lay.addWidget(control, 0, QtCore.Qt.AlignVCenter)
 
+        # Every control on this page arrives through a row, so guarding here is
+        # what makes a new dropdown safe by default: the wheel scrolls the page
+        # instead of silently editing whatever the pointer happens to rest on.
+        # Runs after the control is parented in, so a row given a whole layout
+        # is covered as thoroughly as a row given a single widget.
+        guard_wheel(self)
+
     def set_hint(self, text):
         self.hint.setText(text)
         self.hint.setVisible(bool(text))
@@ -483,6 +491,12 @@ class SettingsPage(QtWidgets.QWidget):
         self._build_system()
         self._build_privacy()
         self._body.addStretch(1)
+
+        # Backstop. SettingsRow already guards everything it is handed; this
+        # catches a control that ever reaches the page by some other route,
+        # because on a page this tall an unguarded dropdown is a live setting
+        # wired to the scroll gesture.
+        guard_wheel(self)
 
     # -------------------------------------------------------- pending status
     @QtCore.Slot(str)

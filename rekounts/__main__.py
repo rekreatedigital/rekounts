@@ -1033,6 +1033,10 @@ def _run():
         controller.filter_hallucinations = cfg.get("filter_hallucinations")
         # Reschedules the running cap timer (and its warning) from elapsed time,
         # so a mid-recording change keeps the interval and the notice in step.
+        # A cap that lands BEHIND a recording already in flight buys it a short
+        # grace rather than ending it here and now: saving a setting is not the
+        # user asking to be cut off mid-sentence (AppController's
+        # _grace_for_a_cap_already_past).
         controller.set_max_recording_seconds(cfg.get("max_recording_seconds"))
 
         # Language and beam size need nothing done here: the transcriber pulls
