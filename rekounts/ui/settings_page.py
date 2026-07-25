@@ -22,7 +22,7 @@ from rekounts.hotkey_manager import DEFAULT_HOTKEY, is_valid_hotkey
 from rekounts.languages import LANGUAGES
 from rekounts.network_facts import statement as network_statement
 from rekounts.scratchpad_store import ScratchpadStore
-from rekounts.ui import theme
+from rekounts.ui import platform_text, theme
 from rekounts.ui.wheel_guard import guard_wheel
 
 log = logging.getLogger(__name__)
@@ -106,14 +106,14 @@ def _compose(tokens) -> str:
     return "+".join(mods + keys)
 
 
-_DISPLAY_NAMES = {"ctrl": "Ctrl", "alt": "Alt", "shift": "Shift", "win": "Win"}
-
-
 def pretty_hotkey(value: str) -> str:
-    """'ctrl+win' -> 'Ctrl + Win'. Display only — config keeps the canonical form."""
-    parts = [_DISPLAY_NAMES.get(t, t.replace("_", " ").title())
-             for t in (value or "").split("+") if t]
-    return " + ".join(parts)
+    """'ctrl+win' -> 'Ctrl + Win'. Display only — config keeps the canonical form.
+
+    The modifier names are per-platform (``Win`` vs ``Cmd``), so the table lives
+    in :mod:`rekounts.ui.platform_text`; this stays as the name the Hub and its
+    tests already import.
+    """
+    return platform_text.pretty_hotkey(value)
 
 
 class HotkeyCaptureEdit(QtWidgets.QLineEdit):
@@ -635,10 +635,7 @@ class SettingsPage(QtWidgets.QWidget):
             self.config.get("device"),
             lambda v: self._persist("device", v))
         sec.add(SettingsRow(
-            "Processing", self.device,
-            "Auto tries your NVIDIA GPU (needs the CUDA libraries — see the "
-            "README) and quietly falls back to CPU if it can't run there. Big "
-            "models are only fast on a GPU."))
+            "Processing", self.device, platform_text.processing_hint()))
 
         self._body.addWidget(sec)
 
@@ -680,8 +677,7 @@ class SettingsPage(QtWidgets.QWidget):
         mic_col.addLayout(btns)
 
         self.mic_row = sec.add(SettingsRow(
-            "Microphone", mic_col,
-            "System default follows whatever Windows is using."))
+            "Microphone", mic_col, platform_text.mic_default_hint()))
         self.test_done.connect(self._show_test_result)
 
         # Sound effects live HERE, not under System where they used to sit —
@@ -783,10 +779,7 @@ class SettingsPage(QtWidgets.QWidget):
         self.long_text_via_paste = self._switch("long_text_via_paste")
         sec.add(SettingsRow(
             "Paste long dictations", self.long_text_via_paste,
-            "Keystroke mode only. Typed keystrokes can't deliver a long "
-            "transcript intact, so anything over ~100 characters goes via the "
-            "clipboard and the clipboard is put straight back. Turn off if "
-            "your app ignores Ctrl+V."))
+            platform_text.long_text_hint()))
 
         self.strip_fillers = self._switch("strip_fillers")
         sec.add(SettingsRow("Remove filler words", self.strip_fillers,
@@ -806,10 +799,7 @@ class SettingsPage(QtWidgets.QWidget):
 
         self.preroll = self._switch("preroll_enabled")
         sec.add(SettingsRow(
-            "Pre-roll buffer", self.preroll,
-            "Catches the first syllable. Holds the microphone stream open, so "
-            "Windows shows the mic-in-use indicator continuously — the audio "
-            "stays in memory and is never written to disk."))
+            "Pre-roll buffer", self.preroll, platform_text.preroll_hint()))
 
         self.max_minutes = QtWidgets.QSpinBox()
         self.max_minutes.setRange(0, 120)
@@ -839,6 +829,8 @@ class SettingsPage(QtWidgets.QWidget):
         # Start from the REAL launch-at-login state, not just the stored flag:
         # if the user disabled us in Task Manager's Startup tab, Windows skips us
         # at login and this switch must say so rather than still reading ON.
+        # (On macOS the backend is a LaunchAgent plist, and its presence IS the
+        # state — rekounts/startup.py; the same getter covers both.)
         try:
             launch_on = bool(self._startup_getter())
         except Exception:
@@ -847,7 +839,7 @@ class SettingsPage(QtWidgets.QWidget):
         self.launch_startup.toggled.connect(self._launch_toggled)
         self.startup_row = sec.add(SettingsRow(
             "Launch at login", self.launch_startup,
-            "Start Rekounts automatically when you sign in to Windows."))
+            platform_text.launch_at_login_hint()))
 
         self.show_pill = self._switch("show_pill")
         sec.add(SettingsRow("Show dictation pill", self.show_pill,
@@ -855,10 +847,7 @@ class SettingsPage(QtWidgets.QWidget):
 
         self.scratchpad = self._switch("scratchpad_enabled")
         sec.add(SettingsRow(
-            "Scratchpad", self.scratchpad,
-            "A floating sticky note you can dictate into — open it from the "
-            "tray menu. Dictation lands in the note while it is the focused "
-            "window, and goes to whatever app you are in otherwise."))
+            "Scratchpad", self.scratchpad, platform_text.scratchpad_hint()))
 
         self.notifications = self._switch("show_notifications")
         sec.add(SettingsRow("Tray notifications", self.notifications,

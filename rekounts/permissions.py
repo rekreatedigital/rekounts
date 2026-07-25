@@ -6,8 +6,10 @@ app can catch at the point of use, the events simply never arrive:
 
   * **Input Monitoring** — the global hotkey listener (pynput's event tap)
     receives no key events without it.
-  * **Accessibility** — synthesized keystrokes (the Cmd+V paste, live typing)
-    are dropped by the window server without it.
+  * **Accessibility** — synthesized keystrokes (the Cmd+V paste, and typed
+    delivery in keystroke mode) are dropped by the window server without it.
+    Note *dropped*, not refused: ``CGEventPost`` reports no error, so without
+    this check a missing grant looks exactly like a dictation that vanished.
   * **Microphone** — recording; this one at least prompts automatically the
     first time the mic is opened.
 

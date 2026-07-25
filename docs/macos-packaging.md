@@ -1,10 +1,47 @@
 # macOS packaging: signing & notarization (documented, not yet attempted)
 
 `Rekounts-macos.spec` builds an **unsigned** `dist/Rekounts.app` (LSUIElement
-agent app, `NSMicrophoneUsageDescription` included). Unsigned is fine for
-development on your own Mac, but distribution needs Developer ID signing and
-notarization — both require the project owner's Apple Developer account
-($99/yr), which is why this step is documented here rather than automated.
+agent app, `NSMicrophoneUsageDescription` included, `assets/icon.icns` as the
+bundle icon). Unsigned is fine for development on your own Mac, but distribution
+needs Developer ID signing and notarization — both require the project owner's
+Apple Developer account ($99/yr), which is why this step is documented here
+rather than automated.
+
+## What is done, and what the $99 buys
+
+Everything that needs no Apple account is in the repo already:
+
+| Piece | State |
+| --- | --- |
+| `Rekounts-macos.spec` | written; LSUIElement, mic usage string, CPU-only excludes |
+| `assets/icon.icns` | **generated and committed** (`tools/make_icon.py`), all ten iconutil OSTypes, 16→1024 px |
+| `packaging/entitlements.plist` | **written and reviewed**; three entitlements, reasoning for each and for every one left out |
+| the procedure below | written |
+| a build | never run — no Mac |
+| a signature | needs the account |
+| notarization | needs the account |
+
+So the account is the *only* remaining blocker for a distributable `.app`, and
+the work it unblocks is running the commands below, not figuring them out.
+
+### The bill, exactly
+
+* **Apple Developer Program — $99/year, per account, recurring.** There is no
+  one-off option and no free tier that produces a notarizable build. Let it
+  lapse and the certificate stops being valid for *new* signatures; builds
+  already notarized and stapled keep working.
+* **Enrolment takes 24–48 h** in practice (identity verification), sometimes
+  longer for a company entity. As Rekreate Digital rather than an individual it
+  also needs a D-U-N-S number, which is free but is its own multi-day wait — if
+  a company enrolment is the intent, start that first, not last.
+* A Mac is required for the signing and notarization steps themselves
+  (`codesign`, `xcrun notarytool`, `stapler` are macOS-only). It does not have
+  to be a *purchased* Mac — an hour on a borrowed one is enough per release —
+  but it cannot be this Windows box, and it cannot be a GitHub runner without
+  putting the signing certificate into repository secrets.
+* **Nothing here costs anything to keep unsigned.** An unsigned app runs fine
+  after a right-click → Open; the cost is paid in the friction described under
+  "Why it matters more for THIS app", not in money.
 
 ## Why it matters more for THIS app
 
@@ -50,8 +87,9 @@ spctl --assess --type execute -vv dist/Rekounts.app
 
 ### Entitlements
 
-PyInstaller apps under the hardened runtime need at least
-(`packaging/entitlements.plist`, to be created at signing time):
+**`packaging/entitlements.plist` now exists** — written, commented and pinned by
+`tests/test_icon_asset.py`, so the signing command above needs no editing. It
+declares exactly three:
 
 ```xml
 <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
@@ -61,7 +99,14 @@ PyInstaller apps under the hardened runtime need at least
 
 The first two are required by CPython/ctypes/onnxruntime under the hardened
 runtime; the third declares mic use. Do **not** add entitlements beyond these
-— every extra one is attack surface and notarization review friction.
+— every extra one is attack surface and notarization review friction. The file
+itself records why each of the tempting extras (`app-sandbox`, `network.*`,
+`automation.apple-events`, `allow-jit`) is deliberately absent.
+
+It has never been through a `codesign` run, so treat the *list* as reviewed and
+the *outcome* as untested: if the hardened runtime kills the app at import, the
+error in Console.app names the missing entitlement, and that is the moment to
+add a fourth — with a note saying what demanded it.
 
 ### `--deep` caveat
 

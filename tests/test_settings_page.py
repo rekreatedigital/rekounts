@@ -250,9 +250,18 @@ def test_focus_out_discards_a_half_typed_combo(page):
 
 
 def test_hotkey_is_shown_prettified_but_stored_canonically(page, cfg):
-    assert page.hotkey.text() == "Ctrl + Win"
+    # Two of the four modifier DISPLAY names are per-platform — "win" is Win vs
+    # Cmd, "alt" is Alt vs Option — because those are what is printed on the
+    # user's keyboard (rekounts/ui/platform_text.py). So the literals here use
+    # only ctrl/shift, which are the same everywhere, and the per-platform table
+    # itself is asserted in tests/test_platform_text.py against BOTH platforms.
+    #
+    # What this test is actually for is the stored/shown SPLIT, plus the
+    # formatting rules that do not vary: modifier order, "+" -> " + ",
+    # underscores to spaces, title case, and empty in / empty out.
+    assert page.hotkey.text() == pretty_hotkey("ctrl+win")
     assert cfg.get("hotkey") == "ctrl+win"
-    assert pretty_hotkey("ctrl+alt+f9") == "Ctrl + Alt + F9"
+    assert pretty_hotkey("ctrl+shift+f9") == "Ctrl + Shift + F9"
     assert pretty_hotkey("page_up") == "Page Up"
     assert pretty_hotkey("") == ""
 

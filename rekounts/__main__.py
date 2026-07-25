@@ -511,8 +511,21 @@ def _report_missing_permissions(notify):
         log.exception("permission check failed (non-fatal)")
 
 
+def _pretty_hotkey(cfg) -> str:
+    """The hotkey as a sentence spells it: 'Ctrl + Win', or 'Ctrl + Cmd' on a
+    Mac. Same deferred-import reasoning as _hotkey_label below."""
+    from rekounts.ui.platform_text import pretty_hotkey
+    return pretty_hotkey(cfg.get("hotkey"))
+
+
 def _hotkey_label(cfg) -> str:
-    return (cfg.get("hotkey") or "").upper()
+    """The pill's hotkey caption. 'ctrl+win' -> 'CTRL+WIN', or 'CTRL+CMD' on a
+    Mac, where the config's "win" token IS the Command key (see the platform
+    note in rekounts/hotkey_manager.py). Imported here rather than at module top
+    only to keep the "no rekounts.ui at import time" rule above unbroken —
+    platform_text itself imports nothing but sys, so it is Qt-free."""
+    from rekounts.ui.platform_text import hotkey_label
+    return hotkey_label(cfg.get("hotkey"))
 
 
 class _NullSounds:
@@ -1127,7 +1140,7 @@ def _run():
             # RECORDING is routed to stop instead of being swallowed.
             is_recording=controller.is_recording,
             on_hint=lambda: bridge.notify.emit(
-                "Double-tap or hold %s to dictate." % cfg.get("hotkey")),
+                "Double-tap or hold %s to dictate." % _pretty_hotkey(cfg)),
             on_config_error=lambda m: (log.error(m), bridge.notify.emit(m)),
         )
         # Legal but collides with a common app shortcut (we do not suppress
@@ -1422,7 +1435,7 @@ def _run():
              transcriber.device, cfg.get("hotkey"))
     # tray.notify enforces the notifications switch itself now.
     tray.notify("Rekounts is running. Hold or double-tap %s to dictate."
-                % cfg.get("hotkey"))
+                % _pretty_hotkey(cfg))
     code = app.exec()
     hotkeys.stop()
     sys.exit(code)

@@ -62,6 +62,91 @@ def test_small_entries_are_bitmaps_and_large_ones_are_png():
         assert is_png == (w > 64), f"{w}px entry has the wrong storage format"
 
 
+# --- the macOS bundle icon --------------------------------------------------
+# assets/icon.icns is what Rekounts-macos.spec hands to BUNDLE(icon=...). Nobody
+# on this project can open it in Finder to check it, so the bytes are checked
+# here instead — and checked the way a wrong one fails: PyInstaller accepts any
+# file path without looking, and a malformed .icns produces a bundle with a blank
+# generic icon and no build warning at all.
+ICNS = REPO_ROOT / "assets" / "icon.icns"
+
+# The set Apple's own iconutil emits from a complete .iconset, in order.
+EXPECTED_ICNS = (
+    ("icp4", 16), ("icp5", 32), ("ic11", 32), ("ic12", 64), ("ic07", 128),
+    ("ic13", 256), ("ic08", 256), ("ic14", 512), ("ic09", 512), ("ic10", 1024),
+)
+
+
+def _icns_chunks(path: Path):
+    """(OSType, declared chunk length, payload) each, parsed from the bytes."""
+    blob = path.read_bytes()
+    assert blob[:4] == b"icns", "not an .icns (bad magic)"
+    declared = struct.unpack_from(">I", blob, 4)[0]
+    assert declared == len(blob), (
+        f"the header claims {declared} bytes but the file is {len(blob)} — "
+        "macOS reads the header, so a truncated file is a silent blank icon")
+    out, offset = [], 8
+    while offset < len(blob):
+        ostype = blob[offset:offset + 4].decode("ascii")
+        length = struct.unpack_from(">I", blob, offset + 4)[0]
+        assert length >= 8, f"{ostype} chunk length {length} is impossible"
+        out.append((ostype, length, blob[offset + 8:offset + length]))
+        offset += length
+    assert offset == len(blob), "chunk lengths do not tile the file exactly"
+    return out
+
+
+def test_the_macos_icon_is_committed():
+    assert ICNS.is_file(), "assets/icon.icns is missing — run tools/make_icon.py"
+
+
+def test_the_icns_carries_every_ostype_the_bundle_needs():
+    assert [t for t, _len, _p in _icns_chunks(ICNS)] == [
+        t for t, _size in EXPECTED_ICNS]
+
+
+def test_each_icns_chunk_holds_a_png_of_the_size_its_ostype_promises():
+    """The width comes out of the PNG's IHDR, not out of the OSType.
+
+    An ic09 chunk holding a 256 px image is legal bytes and a soft Retina Dock
+    icon — the exact mistake that is invisible without a Mac to look at.
+    """
+    for (ostype, _length, payload), (_expected_type, size) in zip(
+            _icns_chunks(ICNS), EXPECTED_ICNS):
+        assert payload[:8] == b"\x89PNG\r\n\x1a\n", f"{ostype} is not a PNG"
+        width, height = struct.unpack_from(">II", payload, 16)
+        assert (width, height) == (size, size), (
+            f"{ostype} should be {size}px, holds {width}x{height}")
+
+
+def test_the_spec_points_at_the_icns_and_not_at_the_windows_ico():
+    """Regression guard for what this asset is FOR: the spec shipped with
+    icon=None, so the bundle had no icon, and a .ico there would be ignored
+    without a warning."""
+    spec = (REPO_ROOT / "Rekounts-macos.spec").read_text(encoding="utf-8")
+    assert 'icon=os.path.join("assets", "icon.icns")' in spec
+
+
+def test_the_entitlements_plist_is_present_and_minimal():
+    """Signing needs the owner's Apple account, so this file is never exercised
+    by a build — which is exactly why its content is worth pinning. An extra
+    entitlement added casually is attack surface nobody would notice."""
+    import plistlib
+    path = REPO_ROOT / "packaging" / "entitlements.plist"
+    assert path.is_file(), "packaging/entitlements.plist is missing"
+    with path.open("rb") as fh:
+        entitlements = plistlib.load(fh)
+    assert set(entitlements) == {
+        "com.apple.security.cs.allow-unsigned-executable-memory",
+        "com.apple.security.cs.disable-library-validation",
+        "com.apple.security.device.audio-input",
+    }
+    assert all(value is True for value in entitlements.values())
+    # A sandboxed build cannot listen for a global hotkey or synthesize
+    # keystrokes into other apps, which is the whole app.
+    assert "com.apple.security.app-sandbox" not in entitlements
+
+
 def test_the_app_resolves_the_icon_from_a_source_checkout():
     found = icon_path()
     assert found is not None

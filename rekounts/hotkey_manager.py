@@ -136,10 +136,17 @@ def hotkey_warning(hotkey):
     key = plain[0]
     if len(key) != 1 or not (key.isascii() and key.isalnum()):
         return None
-    combo = f"{mods[0].title()}+{key.upper()}"
+    # Deferred import: this module loads before the model, and the rule is no
+    # rekounts.ui at import time. platform_text itself is Qt-free (sys only) —
+    # it just names the modifiers the way the user's OS does ("Win" is the
+    # Command key on a Mac, and "Alt" is Option).
+    from rekounts.ui.platform_text import modifier_names, pretty_hotkey
+    names = modifier_names()
+    combo = f"{names.get(mods[0], mods[0].title())}+{key.upper()}"
+    safe = pretty_hotkey("ctrl+win").replace(" ", "")
     return (f"Heads-up: {combo} is also a common app shortcut. Rekounts does "
             f"not block it, so using it to dictate will ALSO trigger "
-            f"{combo} in whatever window has focus. An F-key or Ctrl+Win is safer.")
+            f"{combo} in whatever window has focus. An F-key or {safe} is safer.")
 
 
 # --- key identity --------------------------------------------------------
