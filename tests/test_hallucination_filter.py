@@ -18,9 +18,16 @@ import pytest
 from rekounts.transcriber import (
     PHANTOM_NO_SPEECH_THRESHOLD,
     Transcriber,
+    Transcript,
     is_hallucination,
+    is_phantom_evidence,
+    segments_no_speech_prob,
     strip_phantom_tail,
 )
+
+# Measured values, used throughout so the intent of each test is readable.
+GENUINE_PROB = 0.0057    # genuine speech, incl. a real dictated outro
+PHANTOM_PROB = 0.87      # phantom tail after 30 s of dead air
 
 # ---------------------------------------------------------------------------
 # 1. The composite phrase family (hole 1: the frozenset was exact-match only)
@@ -285,3 +292,118 @@ def test_broken_provider_falls_back_to_filtering():
 
     t = make_transcriber(TAIL_SEGMENTS, filter_provider=boom)
     assert t.transcribe(AUDIO) == "Here is the real dictation."
+
+
+# ---------------------------------------------------------------------------
+# 4. Text alone must NEVER delete anything
+#
+# The predicate above is broad on purpose, and broad is only safe because every
+# caller pairs it with evidence. These tests are the ones that keep it that way.
+# ---------------------------------------------------------------------------
+def test_no_evidence_is_not_evidence():
+    assert is_phantom_evidence(None) is False
+    assert is_phantom_evidence(0.0) is False
+    assert is_phantom_evidence(GENUINE_PROB) is False
+    assert is_phantom_evidence(PHANTOM_NO_SPEECH_THRESHOLD) is True
+    assert is_phantom_evidence(PHANTOM_PROB) is True
+
+
+def test_whole_clip_probability_is_the_minimum_across_segments():
+    """One confident segment protects the whole transcript: the question a
+    whole-clip filter asks is "did ANY of this contain speech?"."""
+    assert segments_no_speech_prob([Seg("a", 0.9), Seg("b", 0.004)]) == 0.004
+    assert segments_no_speech_prob([]) is None
+
+    class Bare:
+        text = "no metadata"
+
+    assert segments_no_speech_prob([Bare()]) is None
+
+
+def test_transcribe_reports_the_evidence_for_what_survived():
+    t = make_transcriber(TAIL_SEGMENTS)
+    out = t.transcribe(AUDIO)
+    assert isinstance(out, Transcript)
+    # the 0.93 tail was stripped, so the evidence describes the kept speech
+    assert out.no_speech_prob == 0.001
+
+
+def test_transcript_is_still_an_ordinary_string():
+    """Every existing caller and test double must keep working untouched."""
+    tr = Transcript("hello world", 0.5)
+    assert tr == "hello world"
+    assert isinstance(tr, str)
+    assert tr.upper() == "HELLO WORLD"
+    assert tr.split() == ["hello", "world"]
+    assert Transcript("x").no_speech_prob is None
+
+
+def test_splitting_can_manufacture_a_phantom_and_that_is_why_evidence_gates_it():
+    """An earlier version of the comment on _CLAUSE_SPLIT claimed splitting
+    "can only ever protect genuine text". That is FALSE, and this test pins the
+    counter-example so nobody relies on the claim again: a genuine composite
+    decomposes into two boilerplate halves.
+
+    "Thank you and goodbye." is a real thing to dictate. The text predicate
+    flags it; the evidence gate is the only reason it is never deleted."""
+    assert is_hallucination("Thank you and goodbye.") is True   # text alone!
+    # ...but with the probability genuine speech actually has, nothing goes:
+    assert strip_phantom_tail([Seg("Thank you and goodbye.", GENUINE_PROB)]) \
+        == ["Thank you and goodbye."]
+
+
+@pytest.mark.parametrize("text", [
+    "Ok thanks", "Thanks, bye.", "Thanks!", "Thanks.", "Bye.", "Thank you.",
+    "Thank you very much.", "You", "Thanks a lot.", "Thanks for listening.",
+    "That's it for today.", "Thank you and goodbye.", "Please subscribe.",
+    "Like and subscribe.", "See you in the next one.", "Until next time.",
+    "I hope you enjoyed it.", "Thanks for watching.", "Okay, thanks.",
+    OWNERS_PHANTOM,
+])
+def test_short_genuine_dictation_survives_the_tail_strip(text):
+    """Short single-clause dictations have no ordinary clause to protect them,
+    so the evidence gate is all that stands between the user and silent data
+    loss. Every one of these was deleted by the first cut of this branch."""
+    assert strip_phantom_tail([Seg(text, GENUINE_PROB)]) == [text]
+
+
+@pytest.mark.parametrize("text", [
+    "Okay.", "Ok", "So", "Well", "Alright", "Now", "Oh",
+])
+def test_a_bare_filler_is_real_dictation_not_a_phantom(text):
+    assert is_hallucination(text) is False
+
+
+def test_filler_still_does_not_rescue_a_real_phantom():
+    assert is_hallucination("So, thank you for watching.") is True
+    assert is_hallucination("Okay, thanks for watching, see you next time.") is True
+
+
+@pytest.mark.parametrize("text", [
+    "Captions by Sarah.",
+    "Translation by the marketing team.",
+    "Subtitles by the editor.",
+    "Transcription by the intern, due Friday.",
+])
+def test_credit_lines_by_a_real_person_are_not_caption_farms(text):
+    """A "<credit word> by <anything>" wildcard deleted these. Only the three
+    caption farms that actually appear in Whisper's output are matched now."""
+    assert is_hallucination(text) is False
+
+
+@pytest.mark.parametrize("text", [
+    "Subtitles by the Amara.org community",
+    "Transcription by CastingWords",
+    "Subs by www.zeoranger.co.uk",
+])
+def test_the_real_caption_farms_are_still_matched(text):
+    assert is_hallucination(text) is True
+
+
+@pytest.mark.parametrize("text", [
+    "Thank you for joining us.",
+    "Thanks for joining us today.",
+    "Thank you all for being here.",
+])
+def test_meeting_language_is_not_caption_boilerplate(text):
+    assert is_hallucination(text) is False

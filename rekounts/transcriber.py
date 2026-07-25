@@ -55,17 +55,35 @@ _STRIP_EDGE = re.compile(r"^[^\w]+|[^\w]+$")
 # report" is not a match for "thank you very much".
 # Sentence punctuation only splits when followed by space or end-of-string, so
 # "amara.org" and "www.zeoranger.co.uk" survive as one clause. " and " splits
-# too: the outros are strung together with it as often as with a comma
-# ("Thanks for watching and I'll see you in the next one."), and since EVERY
-# clause must be phantom, splitting more can only ever protect genuine text.
+# too, because the outros are strung together with it as often as with a comma
+# ("Thanks for watching and I'll see you in the next one.").
+#
+# CAREFUL - splitting is NOT a free safety win, and an earlier version of this
+# comment claimed it was. Splitting can MANUFACTURE a phantom by decomposing a
+# genuine composite into two boilerplate halves:
+#
+#   "thank you and goodbye"  -> "thank you" + "goodbye"  -> both phantom
+#
+# as a single clause it matches nothing, so splitting is what flags it. That is
+# tolerable only because this predicate never decides anything on its own: every
+# caller pairs it with the decoder's own no-speech evidence (see
+# strip_phantom_tail and AppController._finish_final). Text alone must never
+# delete a user's words.
 _CLAUSE_SPLIT = re.compile(
     r"\s*(?:,|[.!?;:…]+(?=\s|$)|\s+and\s+|\s+-+\s+)\s*")
 
 # Discourse openers Whisper likes to prepend; they carry no meaning of their own
 # and must not rescue a clause that is otherwise pure caption boilerplate.
+#
+# A clause that is nothing BUT a filler ("Okay.", "So,") is IGNORED rather than
+# counted as phantom. The difference matters: counting it as phantom made
+# "Okay." on its own a whole-transcript hallucination, and "Okay." is a
+# perfectly ordinary one-word dictation. Ignoring it keeps "So, thank you for
+# watching." matchable while leaving a bare "Okay." alone - and if every clause
+# is filler there is nothing left to judge, so it is not a hallucination.
 _FILLERS = r"(and|so|but|well|ok|okay|alright|all right|now|oh|um|uh)"
 _LEADING_FILLER = re.compile(rf"^{_FILLERS}\s+")
-_FILLER_ONLY = re.compile(rf"{_FILLERS}")
+_FILLER_ONLY = re.compile(_FILLERS)
 
 _THANKS = r"(thank you|thank u|thanks|thankyou)"
 # "so much", "very much", "a lot", "again", "all", "everyone", "guys" - any run.
@@ -74,9 +92,11 @@ _INTENSIFIER = r"(\s+(so much|very much|a lot|again|all|everyone|guys|folks))*"
 _PHANTOM_CLAUSE_PATTERNS = tuple(re.compile(p) for p in (
     # bare thanks - the classic silence artefact
     rf"{_THANKS}{_INTENSIFIER}",
-    # thanks for watching / listening / joining, with any caption trimmings
+    # thanks for watching / listening, with any caption trimmings. Deliberately
+    # NOT "for joining us" / "for being here": those are ordinary meeting and
+    # webinar language ("Thank you for joining us.") with no caption smell.
     rf"{_THANKS}{_INTENSIFIER}\s+for\s+"
-    r"(watching|listening|joining us|joining|tuning in|watching this|being here)"
+    r"(watching|listening|tuning in|watching this)"
     r"(\s+(this|the|my|our))?(\s+(video|one|episode|stream|tutorial|channel))?"
     r"(\s+(everyone|guys|all|you all|folks|today))?",
     # hope you enjoyed it
@@ -107,11 +127,10 @@ _PHANTOM_CLAUSE_PATTERNS = tuple(re.compile(p) for p in (
     r"(bye|bye bye|goodbye|good bye|bye for now|see ya)",
     r"(that'?s|that is)\s+(it|all)\s+for\s+"
     r"(today|now|this video|this one|this week)",
-    # caption-track credits baked into the training data
-    r"(subtitles|subs|subtitling|captions|transcription|translation)"
-    r"(\s+and\s+translation)?\s+(by|provided by)\s+.{0,60}",
-    # bare halves left over when a credit line is split on " and "
-    r"(subtitles|subs|subtitling|captions)",
+    # Caption-track credits baked into the training data. Pinned to the three
+    # caption farms that actually appear in Whisper's output - a "<credit word>
+    # by <anything>" wildcard also deletes "Captions by Sarah." and
+    # "Translation by the marketing team.", which are real things to dictate.
     r".{0,40}\b(amara\.org|zeoranger|castingwords)\b.{0,40}",
     # bracketed non-speech events (the brackets are stripped before we get here)
     r"(music|applause|laughter|silence|blank_?audio|inaudible|"
@@ -124,8 +143,8 @@ _PHANTOM_CLAUSE_PATTERNS = tuple(re.compile(p) for p in (
 def _clause_is_phantom(clause: str) -> bool:
     """True when one clause is caption-outro boilerplate and nothing else."""
     clause = _LEADING_FILLER.sub("", clause).strip()
-    if not clause or _FILLER_ONLY.fullmatch(clause):
-        return True   # punctuation or a bare "so": carries no user content
+    if not clause:
+        return True   # punctuation-only fragment: carries no user content
     if clause in HALLUCINATION_PHRASES:
         return True
     return any(p.fullmatch(clause) for p in _PHANTOM_CLAUSE_PATTERNS)
@@ -207,9 +226,12 @@ def is_hallucination(text: str) -> bool:
     whole transcript, and a phantom tail on real speech is deliberately NOT
     handled here - it has no text-only tell, and is caught per segment with the
     decoder's own no-speech evidence instead (see strip_phantom_tail)."""
-    clauses = _phantom_clauses(text)
+    clauses = [c for c in _phantom_clauses(text)
+               if not _FILLER_ONLY.fullmatch(c)]
     if not clauses:
-        return False  # empty is handled separately (no-speech notice)
+        # Empty, or nothing but discourse filler ("Okay."). Empty is handled
+        # separately by a no-speech notice; a bare "Okay." is real dictation.
+        return False
     return all(_clause_is_phantom(c) for c in clauses)
 
 
@@ -234,6 +256,48 @@ def is_hallucination(text: str) -> bool:
 PHANTOM_NO_SPEECH_THRESHOLD = 0.6
 
 
+class Transcript(str):
+    """The transcript text, carrying the decoder evidence that produced it.
+
+    It IS a str - every existing caller, and every test double that returns a
+    plain string, keeps working untouched - but it also exposes
+    ``no_speech_prob`` so a later stage can require EVIDENCE before deleting
+    anything. Without this the controller's whole-clip filter had nothing to go
+    on but the text itself, which is how a genuine "Ok thanks" (measured
+    no_speech_prob 0.0057) got deleted along with the phantoms.
+
+    ``no_speech_prob`` is the MINIMUM across the surviving segments: the
+    question a whole-clip filter is asking is "did ANY of this contain speech?",
+    so one confident segment has to protect the whole transcript. None means no
+    evidence was available, which must never license a deletion.
+    """
+
+    __slots__ = ("no_speech_prob",)
+
+    def __new__(cls, text, no_speech_prob=None):
+        obj = super().__new__(cls, text)
+        obj.no_speech_prob = no_speech_prob
+        return obj
+
+
+def segments_no_speech_prob(segments):
+    """The minimum no_speech_prob across segments, or None if unavailable."""
+    probs = [p for p in (getattr(s, "no_speech_prob", None) for s in segments)
+             if p is not None]
+    return min(probs) if probs else None
+
+
+def is_phantom_evidence(no_speech_prob) -> bool:
+    """True when the decoder itself reports it heard no speech here.
+
+    The single gate every phantom deletion in the app has to pass. None (no
+    metadata: an older faster-whisper, a test double, a plain string) is NOT
+    evidence and must never permit a deletion.
+    """
+    return (no_speech_prob is not None
+            and no_speech_prob >= PHANTOM_NO_SPEECH_THRESHOLD)
+
+
 def strip_phantom_tail(segments):
     """Drop trailing segments that are BOTH decoder-flagged as no-speech AND
     pure caption boilerplate. Returns the segment texts to keep.
@@ -256,7 +320,7 @@ def strip_phantom_tail(segments):
     while kept:
         seg = kept[-1]
         prob = getattr(seg, "no_speech_prob", None)
-        if prob is None or prob < PHANTOM_NO_SPEECH_THRESHOLD:
+        if not is_phantom_evidence(prob):
             break
         text = getattr(seg, "text", "") or ""
         if not is_hallucination(text):
@@ -603,9 +667,16 @@ class Transcriber:
             # check needs to look at the LAST segment. This is the same single
             # decode pass either way - no second model run.
             segments = list(segments)
-            texts = (strip_phantom_tail(segments) if self._filter_enabled()
-                     else [seg.text for seg in segments])
-            text = join_segments(texts)
+            if self._filter_enabled():
+                kept = strip_phantom_tail(segments)
+                # Evidence is reported for what SURVIVED the tail strip, since
+                # that is the text a later stage might still act on.
+                remaining = segments[:len(kept)]   # only a TAIL is ever dropped
+            else:
+                kept = [seg.text for seg in segments]
+                remaining = segments
+            text = Transcript(join_segments(kept),
+                              segments_no_speech_prob(remaining))
         return self._drop_prompt_echo(text, hotwords)
 
     @staticmethod

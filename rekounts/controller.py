@@ -5,7 +5,7 @@ import time
 from rekounts.audio_utils import normalize_gain
 from rekounts.state_machine import StateMachine
 from rekounts.text_inserter import undelivered_message
-from rekounts.transcriber import is_hallucination
+from rekounts.transcriber import is_hallucination, is_phantom_evidence
 
 log = logging.getLogger(__name__)
 
@@ -321,9 +321,22 @@ class AppController:
             self._sync_state()
 
     def _finish_final(self, raw, duration_s):
-        # Suppress Whisper's phantom phrases on silence/noise, but only when the
-        # WHOLE result is one - a genuine sentence is never dropped.
-        if self.filter_hallucinations and is_hallucination(raw):
+        # Suppress Whisper's phantom phrases on silence/noise. TWO gates, and
+        # both must agree before a single word is deleted:
+        #
+        #   1. the decoder itself must report it heard no speech here, and
+        #   2. the text must be caption boilerplate in every clause.
+        #
+        # Gate 1 is not optional. This check used to run on the text alone, and
+        # a text-only predicate cannot tell a phantom from a user who really
+        # said the same words - a genuine "Ok thanks" measures no_speech_prob
+        # 0.0057 and was being deleted, with a misleading "check your
+        # microphone" notice, while the identical phantom measures 0.87. No
+        # evidence (an older faster-whisper, a transcriber that returns a plain
+        # string) means no deletion.
+        if (self.filter_hallucinations
+                and is_phantom_evidence(getattr(raw, "no_speech_prob", None))
+                and is_hallucination(raw)):
             self.on_notice("No speech detected — check your microphone selection/volume.")
             return
         cleaned = self.cleaner.clean(raw)
