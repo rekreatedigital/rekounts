@@ -41,7 +41,7 @@ log = logging.getLogger(__name__)
 # The one place the support address is written. The owner sets the final value;
 # everything else — the Settings row, the tray entry, the tests — reads it from
 # here.
-SUPPORT_EMAIL = "feedback@rekounts.app"
+SUPPORT_EMAIL = "feedback@rekounts.com"
 
 ISSUE_URL = "https://github.com/{slug}/issues/new"
 
