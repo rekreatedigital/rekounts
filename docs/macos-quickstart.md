@@ -17,8 +17,10 @@ Throughout, steps 1–5 are ordinary Mac and Python things that work the way
 everyone's do. Steps 6–8 are Rekounts itself, and those are the unconfirmed
 ones — they say so where it matters.
 
-**Time:** about 15 minutes of your attention, plus a download that runs on its
-own. **Space:** roughly 1.5 GB.
+**You need:** macOS 12 (Monterey) or newer, on either an Apple Silicon (M1/M2/
+M3/M4) or an Intel Mac. **Time:** about 15 minutes of your attention, plus a
+download that runs on its own. **Space:** roughly 2 GB while installing — about
+1.3 GB once it settles, since pip keeps a cache you can delete afterwards.
 
 ---
 
@@ -37,7 +39,7 @@ cursor. That is it waiting for you.
 
 ---
 
-## Step 2 — Check you have Python 3.11 or newer
+## Step 2 — Check your Python version
 
 Paste this and press Return:
 
@@ -47,23 +49,34 @@ python3 --version
 
 **You should see:** something like `Python 3.12.4`.
 
-- **3.11 or higher** → you are fine, go to step 3.
-- **A lower number** (macOS ships an older one), or **"command not found"** →
-  download the installer from
-  [python.org/downloads](https://www.python.org/downloads/), open it, and click
-  through with the defaults. Then close Terminal, open it again, and re-run the
+- **3.11 or 3.12** → you are fine, go to step 3.
+- **3.13 or newer** → too new, and it will fail later with a confusing error.
+  One of the pieces Rekounts uses (PySide6) does not run on 3.13 yet. Install
+  3.12 as well — the two live side by side and nothing breaks — using the
+  **macOS 64-bit universal2 installer** on
+  [python.org's 3.12 page](https://www.python.org/downloads/release/python-3120/).
+  Then use `python3.12` in place of `python3` in step 4.
+- **3.10 or lower** (macOS ships an older one), or **"command not found"** →
+  install 3.12 from that same
+  [3.12 page](https://www.python.org/downloads/release/python-3120/), click
+  through with the defaults, then close Terminal, open it again, and re-run the
   command above.
+- **A pop-up appears saying "The `python3` command requires the command line
+  developer tools"** → this is normal on a fresh Mac. Click **Install** and
+  wait for it to finish (a few minutes), then run the command again. Note that
+  this usually gives you Python 3.9, which is too old — so follow the
+  "3.10 or lower" branch above afterwards.
 
 ---
 
 ## Step 3 — Download Rekounts
 
 ```sh
-cd ~/Documents && git clone https://github.com/rekreatedigital/rekounts.git && cd rekounts
+cd ~ && git clone https://github.com/rekreatedigital/rekounts.git && cd rekounts
 ```
 
 **You should see:** `Cloning into 'rekounts'...`, some progress lines, and then
-your prompt back. You now have a `rekounts` folder in your Documents.
+your prompt back. You now have a `rekounts` folder in your home folder.
 
 > **If a box pops up** saying the `git` command needs the command line developer
 > tools, click **Install** and wait for it to finish (a few minutes), then paste
@@ -110,12 +123,14 @@ normal connection.
 Now check the install is sound:
 
 ```sh
-python -m pytest -q
+QT_QPA_PLATFORM=offscreen python -m pytest -q
 ```
 
-**You should see:** a line like `1165 passed, 5 skipped`. The numbers grow over
-time; what matters is that it does **not** say `failed`. If it does, stop here
-and [get help](#if-something-goes-wrong) — carrying on will only confuse things.
+**You should see:** a line like `1167 passed, 20 skipped`. Both numbers will
+differ from a Windows run and both grow over time — the Mac-only tests run here
+and the Windows-only ones skip, which is exactly right. What matters is that it
+does **not** say `failed`. If it does, stop here and
+[get help](#if-something-goes-wrong) — carrying on will only confuse things.
 
 ---
 
@@ -125,11 +140,28 @@ and [get help](#if-something-goes-wrong) — carrying on will only confuse thing
 python -m rekounts
 ```
 
-**The first start is slow.** It downloads the speech model once — about 486 MB —
-into `~/Library/Application Support/Rekounts/models/`. After that Rekounts works
+**The first start is slow, and — this is the important part — completely
+silent.** It downloads the speech model once, about 486 MB, into
+`~/Library/Application Support/Rekounts/models/`. After that Rekounts works
 completely offline, with your Wi-Fi off, forever.
 
-**You should see** *(this is the part nobody has watched on a real Mac)*:
+> ### ⚠️ For the first few minutes, nothing happens at all
+>
+> No menu-bar icon, no pill, no Dock icon, and **no output in Terminal** — the
+> window will look frozen. That is the download, and it is normal. **Do not
+> press Ctrl+C**, and do not close the window.
+>
+> If you want to watch it actually progressing, leave that window alone, open a
+> **second** Terminal window (`⌘N`) and paste:
+>
+> ```sh
+> tail -f ~/Library/Application\ Support/Rekounts/logs/rekounts.log
+> ```
+>
+> You will see lines counting up to `100%`. Press `Ctrl+C` in *that* second
+> window when you are done watching — it only stops the watching, not Rekounts.
+
+**Then you should see** *(this is the part nobody has watched on a real Mac)*:
 
 - a small **Rekounts icon in your menu bar**, at the top right of the screen;
 - a small dark **pill** near the bottom-centre of your screen — that is how you
@@ -162,6 +194,7 @@ broken app. So do this even if Rekounts has not complained.
 > Mac download.
 
 1. Open **System Settings** → **Privacy & Security** → **Input Monitoring**.
+   *(On macOS 12 Monterey and 13 it is called **System Preferences** → **Security & Privacy** → the **Privacy** tab — and you must click the padlock at the bottom left and enter your password before anything can be ticked.)*
    Switch **Terminal** on. *(Without this, the hotkey does nothing at all.)*
 2. Go back, then into **Accessibility**. Switch **Terminal** on there too.
    *(Without this, your words are transcribed but never appear anywhere.)*
@@ -170,7 +203,7 @@ broken app. So do this even if Rekounts has not complained.
 4. Open Terminal again and start Rekounts back up:
 
    ```sh
-   cd ~/Documents/rekounts && source .venv/bin/activate && python -m rekounts
+   cd ~/rekounts && source .venv/bin/activate && python -m rekounts
    ```
 
 5. The **microphone** is the easy one — macOS asks you itself, with a normal
@@ -208,7 +241,7 @@ That is the whole app. There is nothing else to learn.
 Two lines, every time, in a fresh Terminal window:
 
 ```sh
-cd ~/Documents/rekounts && source .venv/bin/activate && python -m rekounts
+cd ~/rekounts && source .venv/bin/activate && python -m rekounts
 ```
 
 To stop it: menu bar icon → **Quit**, or press **Ctrl+C** in the Terminal
@@ -262,7 +295,7 @@ information.
   [privacy.md](privacy.md) for exactly what is stored where.
 - **Your stuff lives in** `~/Library/Application Support/Rekounts/` — settings,
   history, the speech model and the log. Deleting the `rekounts` folder from
-  Documents removes the app but not that.
+  the `rekounts` folder removes the app but not that.
 
 ---
 

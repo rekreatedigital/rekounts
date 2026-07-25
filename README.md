@@ -142,8 +142,9 @@ does nothing because a permission was never granted is worse than no `.app`.
 The terse version; [the quickstart](docs/macos-quickstart.md) is the same thing
 step by step, for someone who has not done this before.
 
-You need **macOS 12 (Monterey) or newer** and Python 3.11+
-(`brew install python@3.12`, or python.org).
+You need **macOS 12 (Monterey) or newer** and Python **3.11 or 3.12**
+(`brew install python@3.12`, or python.org). Not 3.13+: the pinned
+`PySide6==6.7.2` declares `Requires-Python: <3.13`, so the install fails.
 
 ```sh
 git clone https://github.com/rekreatedigital/rekounts.git && cd rekounts

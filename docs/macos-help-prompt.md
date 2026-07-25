@@ -37,7 +37,7 @@ There is no Mac download. On macOS it only runs from source. It's explicitly
 experimental: the Mac code is complete and passes automated tests, but it has
 never been run on physical Mac hardware by anyone, so unexpected failures are
 genuinely possible and "this is just broken" is a valid conclusion.
-It needs macOS 12+ and Python 3.11+. The install is verified automatically on
+It needs macOS 12+ and Python 3.11 or 3.12 (NOT 3.13 or newer — PySide6, which it depends on, has no 3.13 build yet). The install is verified automatically on
 Apple Silicon only — Intel Macs have never been tested.
 
 THE EXACT STEPS I'M FOLLOWING
