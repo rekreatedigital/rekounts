@@ -394,7 +394,8 @@ dictation.
   rather than offering a choice that changes nothing. Your `device` setting in
   `config.json` is read and obeyed either way.
 - **Audio** — microphone, with **Refresh** and a **Test** button (you want
-  "Heard you clearly").
+  "Heard you clearly"); **Sound effects**, the short tone when dictation
+  starts and stops; and its **Volume**.
 - **Behavior** — insertion mode: `paste` (default; your clipboard is preserved)
   or `keystroke` (types the characters; never touches the clipboard); the
   text cleanup toggles
@@ -404,8 +405,8 @@ dictation.
   "right" only when commas mark them as asides, so "I like it" and "turn
   right" are never touched); **Catch the first word** (the pre-roll buffer);
   the maximum recording length; and the phantom-phrase filter.
-- **System** — launch at login, sound effects, the on-screen pill, and tray
-  notifications.
+- **System** — launch at login, the on-screen pill, the **Scratchpad**, tray
+  notifications, and the automatic update check.
 - **Data & Privacy** — the dictation-history switch, **Clear all**, **Open
   folder** shortcuts to where your data lives and to the diagnostic log, and
   **Send feedback…**.
