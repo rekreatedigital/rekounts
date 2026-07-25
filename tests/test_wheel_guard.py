@@ -56,7 +56,11 @@ def page(app, tmp_path, monkeypatch):
                         lambda: list(FAKE_MICS))
     cfg = Config(path=tmp_path / "config.json")
     applies = []
-    p = SettingsPage(cfg, None, on_saved=lambda: applies.append(1))
+    # gpu_choice pinned True: CONTROLS below names the Processing combo, and
+    # the row is not drawn on macOS or in a packaged build. The wheel guard
+    # is platform-independent, so the test should be too.
+    p = SettingsPage(cfg, None, on_saved=lambda: applies.append(1),
+                     gpu_choice=True)
     p.resize(760, 558)          # the Hub's real page size: content overflows
     p.show()
     app.processEvents()

@@ -26,9 +26,11 @@ Two conventions, both deliberate:
   the menu bar). Copy that differs per platform belongs in one table per
   platform.
 
-Scope: sentences that make a factual claim about the operating system. Control
-*titles* ("Tray notifications") are left alone — they name a Rekounts feature,
-not an OS behavior, and churning them buys nothing.
+Scope: sentences that make a factual claim about the operating system — and, by
+the same logic, about the BUILD, because "packaged" and "run from source" are
+two different products to the person reading. :func:`gpu_choice_applies` is
+here for that reason. Control *titles* are named by the page itself; they
+describe a Rekounts feature rather than an OS behavior.
 
 Nothing here imports Qt or anything else from the app: it is strings only, and
 it is the single place to add a third platform's wording.
@@ -106,22 +108,22 @@ def mic_default_hint(platform=None) -> str:
 
 
 def long_text_hint(platform=None) -> str:
-    return ("Keystroke mode only. Typed keystrokes can't deliver a long "
-            "transcript intact, so anything over ~100 characters goes via the "
-            "clipboard and the clipboard is put straight back. Turn off if "
-            f"your app ignores {paste_shortcut(platform)}.")
+    return ("Keystroke mode only. A long transcript arrives mangled when it is "
+            "typed out, so a long one is pasted instead and your clipboard is "
+            "put straight back. Turn off if your app ignores "
+            f"{paste_shortcut(platform)}.")
 
 
 def preroll_hint(platform=None) -> str:
     # macOS's indicator is not a copy of Windows': it is the orange dot in the
     # menu bar (macOS 12+), and it stays lit for as long as the stream is open.
     if is_mac(platform):
-        return ("Catches the first syllable. Holds the microphone stream open, "
-                "so the orange microphone dot stays in your menu bar the whole "
-                "time — the audio stays in memory and is never written to disk.")
-    return ("Catches the first syllable. Holds the microphone stream open, so "
-            "Windows shows the mic-in-use indicator continuously — the audio "
-            "stays in memory and is never written to disk.")
+        return ("The microphone stays open the whole time, so the orange "
+                "microphone dot stays in your menu bar — the audio stays in "
+                "memory and is never written to disk.")
+    return ("The microphone stays open the whole time, so Windows shows the "
+            "mic-in-use indicator continuously — the audio stays in memory and "
+            "is never written to disk.")
 
 
 def launch_at_login_hint(platform=None) -> str:
@@ -130,22 +132,54 @@ def launch_at_login_hint(platform=None) -> str:
     return "Start Rekounts automatically when you sign in to Windows."
 
 
-def processing_hint(platform=None) -> str:
-    """Why the Processing dropdown has nothing to offer a Mac.
+def gpu_choice_applies(frozen=None, platform=None) -> bool:
+    """Whether choosing between CPU and Auto can change anything on this run.
 
-    Not a hardware finding — it follows from what the speech engine supports.
-    faster-whisper runs on CTranslate2, whose only accelerator backend is CUDA
-    (``ctranslate2.get_cuda_device_count()``, see rekounts/transcriber.py), so
-    on a Mac "Auto" resolves to CPU every time. Saying so beats offering a
-    setting that silently does nothing.
+    The Processing row was shown to everybody and could only ever do something
+    for one audience: someone running from source, on Windows or Linux, with
+    NVIDIA's CUDA libraries installed. Two independent walls:
+
+    * **A packaged build has no GPU stack at all.** ``Rekounts.spec`` excludes
+      ``nvidia``/``torch``/``triton`` on purpose — it is a CPU-only bundle — and
+      :func:`rekounts.transcriber._cuda_loads_safely` returns False outright
+      under ``sys.frozen`` because the probe cannot even run there (the probe
+      subprocess would relaunch the app). So for everyone who DOWNLOADED
+      Rekounts, "Auto" resolves to CPU, always.
+    * **macOS has no CUDA.** faster-whisper runs on CTranslate2, whose only
+      accelerator backend is CUDA, and there is no macOS build of it. Auto is
+      CPU on a Mac whether it is packaged or not.
+
+    Where this returns False the page does not draw the row at all. A setting
+    that cannot change what happens is not made honest by a label admitting so;
+    the honest version is not offering it. The ``device`` key in config.json is
+    untouched by this either way — it keeps loading and keeps being obeyed, so
+    a config carried between a source checkout and an installed build behaves
+    exactly as it did before.
+
+    ``frozen`` is injectable for the same reason every probe in
+    :mod:`rekounts.permissions` is: the frozen branch has to be assertable from
+    a dev box without freezing anything. It defaults to the codebase's usual
+    ``getattr(sys, "frozen", False)``.
     """
-    if is_mac(platform):
-        return ("Auto and CPU do the same thing on a Mac: the speech engine's "
-                "GPU support is NVIDIA-only, so there is nothing else for it "
-                "to try. Base and Small are the realistic choices.")
-    return ("Auto tries your NVIDIA GPU (needs the CUDA libraries — see the "
-            "README) and quietly falls back to CPU if it can't run there. Big "
-            "models are only fast on a GPU.")
+    if frozen is None:
+        frozen = getattr(sys, "frozen", False)
+    if frozen:
+        return False
+    return not is_mac(platform)
+
+
+def processing_hint(platform=None) -> str:
+    """What Auto does, for the only build that can offer it.
+
+    Only reachable where :func:`gpu_choice_applies` is True — a from-source run
+    on Windows or Linux — so naming the CUDA libraries here is not jargon
+    dumped on a stranger: installing them is the whole point of the row, and
+    the reader is someone who already has a checkout and a README.
+    """
+    return ("Auto uses your NVIDIA graphics card when it can actually "
+            "transcribe there, and the CPU when it can't. The card needs "
+            "NVIDIA's CUDA libraries installed alongside Rekounts — the README "
+            "has the one-line install.")
 
 
 def scratchpad_hint(platform=None) -> str:

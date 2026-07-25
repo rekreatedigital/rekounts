@@ -25,9 +25,13 @@ Everything is defensive and injectable:
     failure reads as ``None`` ("unknown"), never an exception — a missing
     wheel must not take down startup, and "unknown" is deliberately NOT
     reported as missing (no false alarms on machines we cannot read).
-  * ``check_permissions`` takes the platform and each probe as parameters so
-    the policy is unit-testable with fakes on every OS (the pattern of
-    tests/test_startup.py's registry fakes).
+  * ``check_permissions`` takes the platform, each probe, and whether this is a
+    frozen build as parameters, so the policy is unit-testable with fakes on
+    every OS (the pattern of tests/test_startup.py's registry fakes).
+
+The guidance is per-BUILD as well as per-OS, because macOS grants a consent to
+the running bundle: from source that bundle is the terminal, not Rekounts. See
+:func:`_enable_step`.
 """
 from __future__ import annotations
 
@@ -103,16 +107,49 @@ def _probe_microphone():
 _SETTINGS_PATH = "System Settings > Privacy & Security > %s"
 
 
+def _enable_step(pane: str, frozen: bool, reopen: bool = True) -> str:
+    """Where to grant one consent — naming the app macOS will actually list.
+
+    macOS attributes a TCC consent to the running BUNDLE, and a from-source run
+    is not Rekounts.app: the bundle is whatever launched Python, i.e. the
+    terminal or editor the app was started in. So the old advice — "Enable
+    Rekounts under ... Input Monitoring" — sent a source user hunting for an
+    entry that is not in the list and cannot be added, from which the only
+    reasonable conclusion is that the app is broken.
+
+    The packaged .app keeps today's wording verbatim, because there it is
+    exactly right. We deliberately do NOT try to work out WHICH terminal is
+    hosting us: that needs native APIs this port should not grow before it has
+    run on real hardware, and "your terminal, or whichever app you started it
+    from" is already enough to find the row.
+    """
+    where = _SETTINGS_PATH % pane
+    tail = ", then quit and reopen Rekounts" if reopen else ""
+    if frozen:
+        return f"Enable Rekounts under {where}{tail}."
+    return (
+        "Running from source, macOS gives this to the app Rekounts was "
+        "launched from, so “Rekounts” will not appear in the list. Enable "
+        f"your terminal (or whichever app you started it from) under {where}, "
+        "then quit that app and start Rekounts again.")
+
+
 def check_permissions(platform=None, input_monitoring=None, accessibility=None,
-                      microphone=None) -> list[PermissionState]:
+                      microphone=None, frozen=None) -> list[PermissionState]:
     """The three consent states, with human guidance for each.
 
     All probes injectable for tests; production passes nothing and gets the
     real (lazy pyobjc) probes. Non-darwin platforms have no TCC — empty list.
+
+    ``frozen`` selects which app the guidance tells the user to enable (see
+    :func:`_enable_step`) and is injectable for the same reason the probes are:
+    both branches have to be assertable without building a .app.
     """
     platform = platform if platform is not None else sys.platform
     if platform != "darwin":
         return []
+    if frozen is None:
+        frozen = getattr(sys, "frozen", False)
     input_monitoring = input_monitoring or _probe_input_monitoring
     accessibility = accessibility or _probe_accessibility
     microphone = microphone or _probe_microphone
@@ -128,18 +165,16 @@ def check_permissions(platform=None, input_monitoring=None, accessibility=None,
     return [
         PermissionState(
             "Input Monitoring", read(input_monitoring),
-            "Rekounts can't see the dictation hotkey. Enable Rekounts under "
-            + (_SETTINGS_PATH % "Input Monitoring")
-            + ", then quit and reopen Rekounts."),
+            "Rekounts can't see the dictation hotkey. "
+            + _enable_step("Input Monitoring", frozen)),
         PermissionState(
             "Accessibility", read(accessibility),
-            "Rekounts can't paste dictated text. Enable Rekounts under "
-            + (_SETTINGS_PATH % "Accessibility")
-            + ", then quit and reopen Rekounts."),
+            "Rekounts can't paste dictated text. "
+            + _enable_step("Accessibility", frozen)),
         PermissionState(
             "Microphone", read(microphone),
-            "Rekounts can't hear you: microphone access is denied. Enable "
-            "Rekounts under " + (_SETTINGS_PATH % "Microphone") + "."),
+            "Rekounts can't hear you: microphone access is denied. "
+            + _enable_step("Microphone", frozen, reopen=False)),
     ]
 
 

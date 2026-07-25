@@ -58,6 +58,12 @@ out step by step.
 > do not use all day. After granting, **quit and reopen the terminal**: macOS
 > only re-reads a grant at process start. The packaged .app gets its own
 > identity and its own three grants.
+>
+> The app now says this itself: from source the permission toasts tell you to
+> enable your terminal and warn that "Rekounts" will not be in the list, and
+> only the packaged .app is told to look for Rekounts
+> (`rekounts/permissions.py`). So a toast naming Rekounts during a from-source
+> run is a bug, not the instruction to follow.
 
 ## 1. Permissions onboarding  ⬜
 
@@ -65,7 +71,10 @@ Fresh machine (or `tccutil reset All` equivalents on a test account):
 
 - [ ] Launch. Expect tray toasts naming any missing permission with the exact
       System Settings pane (Input Monitoring / Accessibility) — NOT a silent
-      dead app. (`rekounts/permissions.py`; toast text ends "quit and reopen".)
+      dead app. (`rekounts/permissions.py`.) Running from source, each toast
+      must name **your terminal**, not Rekounts, and end "start Rekounts
+      again"; from the packaged .app it names Rekounts and ends "quit and
+      reopen Rekounts".
 - [ ] Grant **Input Monitoring**, relaunch: hotkey toast gone.
 - [ ] Grant **Accessibility**, relaunch: paste toast gone.
 - [ ] First dictation triggers the **Microphone** system prompt (that prompt
