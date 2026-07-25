@@ -173,6 +173,18 @@ def test_volume_greys_out_while_sounds_are_off(page):
     assert page.sound_volume.isEnabled() is True
 
 
+def test_the_volume_row_says_nothing_when_there_is_nothing_to_say(page):
+    """It used to read "Applies to the next cue — no restart." Nobody choosing
+    between Soft and Loud was wondering about a restart; the sentence invented
+    the doubt. The only hint left is the one that explains a greyed-out
+    control."""
+    assert page.volume_row.hint.text() == ""
+    assert page.volume_row.hint.isHidden() is True      # no empty gap either
+    page.sound_effects.setChecked(False)
+    assert page.volume_row.hint.text() == \
+        "Turn sound effects on to change the volume."
+
+
 def test_volume_starts_greyed_out_when_sounds_are_already_off(
         app, cfg, history, monkeypatch):
     """The disabled state has to be right on construction, not only after a
@@ -314,6 +326,97 @@ def test_processing_device_persists(page, cfg):
     assert cfg.get("device") == "auto"
     page.device.setCurrentIndex(page.device.findData("cpu"))
     assert cfg.get("device") == "cpu"
+
+
+# ------------------------------------------- Processing: only where it is real
+def _page(cfg, history, monkeypatch, **kw):
+    monkeypatch.setattr("rekounts.ui.settings_page.microphone_options",
+                        lambda: list(FAKE_MICS))
+    return SettingsPage(cfg, history, **kw)
+
+
+def test_a_build_that_cannot_use_a_gpu_does_not_show_the_row(
+        app, cfg, history, monkeypatch):
+    """The whole defect: a packaged build excludes the CUDA stack, so Auto was
+    always CPU — and the row told every downloader to go and install CUDA
+    libraries that build can never load. Not shown means not lying."""
+    p = _page(cfg, history, monkeypatch, gpu_choice=False)
+    assert p.device is None
+    assert "Processing" not in _row_titles(p)
+    assert not any("CUDA" in label.text()
+                   for label in p.findChildren(QtWidgets.QLabel))
+    p.deleteLater()
+
+
+def test_a_build_that_can_use_a_gpu_still_shows_the_row(app, cfg, history,
+                                                        monkeypatch):
+    p = _page(cfg, history, monkeypatch, gpu_choice=True)
+    assert "Processing" in _row_titles(p)
+    assert {p.device.itemData(i) for i in range(p.device.count())} == \
+        {"cpu", "auto"}
+    p.deleteLater()
+
+
+def test_hiding_the_row_does_not_touch_the_stored_device(app, cfg, history,
+                                                          monkeypatch):
+    """Someone who set Auto from source, or by hand, keeps that value when they
+    move the same config.json to an installed build. The row goes away; the key
+    is still loaded and still obeyed by the transcriber."""
+    cfg.set("device", "auto")
+    cfg.save()
+    p = _page(cfg, history, monkeypatch, gpu_choice=False)
+    p.sound_effects.setChecked(not p.sound_effects.isChecked())  # any write
+    assert Config(path=cfg.path).get("device") == "auto"
+    p.deleteLater()
+
+
+def test_the_page_defaults_to_the_platform_verdict(app, cfg, history,
+                                                    monkeypatch):
+    """No caller passes gpu_choice in production, so the default has to be the
+    real answer for this build — not a hardcoded True."""
+    monkeypatch.setattr("rekounts.ui.settings_page.platform_text."
+                        "gpu_choice_applies", lambda: False)
+    p = _page(cfg, history, monkeypatch)
+    assert p.device is None
+    p.deleteLater()
+
+
+# ---------------------------------------------- labels that fit their control
+# A QComboBox CLIPS its label rather than eliding it, so an over-long option is
+# not shortened, it is cut mid-word: the Processing row shipped showing
+# "Auto — use the GPU when it actually", and a label that truncates is a label
+# that lies.
+#
+# The yardstick is the label theme.CONTROL_W was sized around — see the note on
+# CONTROL_W in ui/theme.py, where 240px minus 44px of frame, padding and arrow
+# leaves 196px and this label measures 184px of it in the Hub's real font.
+# Every other option is measured against THAT rather than against a pixel
+# number, because the headless Qt this suite runs under has no font database
+# and falls back to a fixed-pitch face — an absolute budget would be measuring
+# a typeface no user will ever see, while a comparison stays true in both.
+WIDEST_ACCEPTED_LABEL = "Small — balanced (recommended)"
+
+
+def test_no_dropdown_label_is_cut_off_at_the_real_control_width(page):
+    too_wide = []
+    for box in page.findChildren(QtWidgets.QComboBox):
+        if box is page.mic:
+            continue          # device names come from the OS, not from us
+        fm = QtGui.QFontMetrics(box.font())
+        budget = fm.horizontalAdvance(WIDEST_ACCEPTED_LABEL)
+        for i in range(box.count()):
+            label = box.itemText(i)
+            width = fm.horizontalAdvance(label)
+            if width > budget:
+                too_wide.append(f"{label!r} needs {width}px of {budget}px")
+    assert not too_wide, "clipped dropdown labels: " + "; ".join(too_wide)
+
+
+def test_the_yardstick_is_still_one_of_the_labels(page):
+    """If the model dropdown is ever reworded, this comparison quietly stops
+    measuring anything real — so pin the reference to something on the page."""
+    labels = [page.model.itemText(i) for i in range(page.model.count())]
+    assert WIDEST_ACCEPTED_LABEL in labels
 
 
 def test_max_recording_is_shown_in_minutes_and_stored_in_seconds(page, cfg):
@@ -548,6 +651,52 @@ def test_a_failing_feedback_handler_does_not_escape_into_qt(app, cfg, history,
     p = SettingsPage(cfg, history, on_send_feedback=boom)
     _button(p, "Send feedback…").click()          # must not raise
     p.deleteLater()
+
+
+# ============================================== what the page is allowed to say
+# The standard, in the owner's words: "is this really there for every user? It
+# shouldn't be personalised to me, it should be for everyone." These are the
+# specific phrases that failed it, kept here so they cannot creep back in.
+#
+# "CUDA" is NOT in this list: it is legitimate in a from-source run, where
+# installing the libraries is the point of the row. What must never happen is a
+# packaged build saying it — asserted where it belongs, on a page built with
+# gpu_choice=False.
+RETIRED_COPY = [
+    "no restart",          # answers a question nobody asked
+    "history.db",          # a filename where "nothing is saved" is the fact
+    "scratchpad.json",     # (allowed in the Scratchpad row — see below)
+    "~100 characters",     # an internal threshold
+    "Off by default",      # the switch beside it already says so
+    "Pre-roll",            # the engineering name for "catch the first word"
+]
+
+
+def _all_page_text(page):
+    return [label.text() for label in page.findChildren(QtWidgets.QLabel)]
+
+
+@pytest.mark.parametrize("phrase", RETIRED_COPY)
+def test_no_row_talks_to_the_developer_instead_of_the_user(page, phrase):
+    offenders = [t for t in _all_page_text(page) if phrase in t]
+    if phrase == "scratchpad.json":
+        # The one filename that stays: this row's whole job is telling you your
+        # note is written to disk without being asked, and the file is
+        # something you can go and delete. Nowhere else may name a file.
+        assert all("Saved automatically" in t for t in offenders)
+        return
+    assert offenders == []
+
+
+def test_the_load_bearing_sentences_are_still_there(page):
+    """Not everything long is noise. These carry a real consequence or a real
+    promise, and flattening them into cheerfulness would be the opposite fix."""
+    text = " ".join(_all_page_text(page))
+    assert "never written to disk" in text            # pre-roll, privacy
+    assert "never your transcripts" in text           # the diagnostic log
+    assert "Rekounts sends nothing itself" in text    # feedback
+    assert "“I like it” is never touched" in text     # hedge-phrase safety
+    assert "Turn off if your app ignores" in text     # the paste escape hatch
 
 
 def test_opening_the_log_folder_creates_it_if_logging_never_could(page,

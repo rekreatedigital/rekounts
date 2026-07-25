@@ -429,19 +429,25 @@ class SettingsPage(QtWidgets.QWidget):
     APPLY_DELAY_MS = 250
 
     _MODEL_HINT = ("Bigger models are more accurate and slower — Small is a good "
-                   "all-round default. First use of a model downloads it once; "
-                   "switching reloads in the background and dictation keeps "
-                   "working meanwhile.")
+                   "all-round default. A model downloads once, the first time "
+                   "you pick it, and you can keep dictating while it loads.")
     test_done = QtCore.Signal(str)
     # Pending-apply text, emitted so set_status() is safe to call from the
     # worker thread a model reload finishes on.
     _status_changed = QtCore.Signal(str)
 
     def __init__(self, config, history=None, on_saved=None, startup_setter=None,
-                 startup_getter=None, on_send_feedback=None):
+                 startup_getter=None, on_send_feedback=None,
+                 gpu_choice=None):
         super().__init__()
         self.config = config
         self.history = history
+        # Whether to draw the Processing row at all. False in every packaged
+        # build and on every Mac, where the choice cannot change what happens —
+        # see platform_text.gpu_choice_applies. Injectable so both branches are
+        # testable from one machine without freezing anything.
+        self._gpu_choice = (platform_text.gpu_choice_applies()
+                            if gpu_choice is None else bool(gpu_choice))
         self._on_saved = on_saved or (lambda: None)
         # Optional, like the tray's: the default opens the review dialog, and a
         # caller (or a test) can substitute its own handler.
@@ -629,13 +635,22 @@ class SettingsPage(QtWidgets.QWidget):
         self.model_row = sec.add(SettingsRow(
             "Speech model", self.model, self._MODEL_HINT))
 
-        self.device = self._combo(
-            [("CPU — works everywhere", "cpu"),
-             ("Auto — use the GPU when it actually works", "auto")],
-            self.config.get("device"),
-            lambda v: self._persist("device", v))
-        sec.add(SettingsRow(
-            "Processing", self.device, platform_text.processing_hint()))
+        # Processing is drawn only where picking Auto could actually change
+        # something. In a packaged build the CUDA stack is excluded from the
+        # bundle and the probe cannot even run (Rekounts.spec, transcriber.py),
+        # and on a Mac the speech engine has no accelerator backend at all — so
+        # for everyone who downloaded the app, Auto was CPU and the row was
+        # advertising GPU libraries the build could never load.
+        self.device = None
+        self.device_row = None
+        if self._gpu_choice:
+            self.device = self._combo(
+                [("CPU — works everywhere", "cpu"),
+                 ("Auto — use the GPU when it can", "auto")],
+                self.config.get("device"),
+                lambda v: self._persist("device", v))
+            self.device_row = sec.add(SettingsRow(
+                "Processing", self.device, platform_text.processing_hint()))
 
         self._body.addWidget(sec)
 
@@ -696,9 +711,10 @@ class SettingsPage(QtWidgets.QWidget):
              ("Loud", sounds.VOLUME_LOUD)],
             _nearest_volume(self.config.get("sound_volume")),
             lambda v: self._persist("sound_volume", float(v)))
-        self.volume_row = sec.add(SettingsRow(
-            "Cue volume", self.sound_volume,
-            "Applies to the next cue — no restart."))
+        # No hint while the cues are on. The row used to say "Applies to the
+        # next cue — no restart", which answers a question nobody choosing a
+        # volume level was asking; it planted the doubt instead of removing one.
+        self.volume_row = sec.add(SettingsRow("Volume", self.sound_volume))
         self._sync_volume_availability(bool(self.config.get("sound_effects")))
 
         self._body.addWidget(sec)
@@ -708,8 +724,7 @@ class SettingsPage(QtWidgets.QWidget):
         rather than leaving a live-looking control that changes nothing."""
         self.sound_volume.setEnabled(bool(sounds_on))
         self.volume_row.set_hint(
-            "Applies to the next cue — no restart." if sounds_on
-            else "Turn sound effects on to change the volume.")
+            "" if sounds_on else "Turn sound effects on to change the volume.")
 
     def _populate_mics(self, selected):
         """(Re)fill the dropdown, keeping the current selection if it still exists."""
@@ -797,9 +812,12 @@ class SettingsPage(QtWidgets.QWidget):
         sec.add(SettingsRow("Remove repeated words", self.collapse_repeats,
                             "Collapses accidental stutters (“the the” → “the”)."))
 
+        # Titled for what it does, not for the technique. "Pre-roll buffer" is
+        # the name in the code; nobody scanning Settings for "it clips my first
+        # word" was going to recognise it.
         self.preroll = self._switch("preroll_enabled")
         sec.add(SettingsRow(
-            "Pre-roll buffer", self.preroll, platform_text.preroll_hint()))
+            "Catch the first word", self.preroll, platform_text.preroll_hint()))
 
         self.max_minutes = QtWidgets.QSpinBox()
         self.max_minutes.setRange(0, 120)
@@ -859,8 +877,8 @@ class SettingsPage(QtWidgets.QWidget):
         self.auto_updates = self._switch("auto_check_updates")
         sec.add(SettingsRow(
             "Check for updates automatically", self.auto_updates,
-            "Off by default. When on, Rekounts asks GitHub once per launch "
-            "whether there is a newer release, and only speaks up if there is."))
+            "When on, Rekounts asks GitHub once per launch whether there is a "
+            "newer release, and only speaks up if there is."))
 
         self._body.addWidget(sec)
 
@@ -905,9 +923,9 @@ class SettingsPage(QtWidgets.QWidget):
         self.history_enabled = self._switch("history_enabled", self._apply_history)
         sec.add(SettingsRow(
             "Save dictation history", self.history_enabled,
-            "Off means no dictation is written to history.db — the Dictation "
-            "page stays empty. The Scratchpad keeps its own note either way; "
-            "clear it below."))
+            "Off means nothing you dictate is saved — the Dictation page stays "
+            "empty. The Scratchpad keeps its own note either way; clear it "
+            "below."))
 
         self.clear_btn = QtWidgets.QPushButton("Clear all…")
         self.clear_btn.setObjectName("Danger")
