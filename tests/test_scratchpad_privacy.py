@@ -121,6 +121,10 @@ def test_clear_note_empties_the_pad_and_the_file(app, store):
         pad.clear_note()
         assert pad.edit.toPlainText() == ""
         assert "delete this please" not in store.load()["html"]
+        # Stored as truly empty, not as Qt's ~600-byte empty-document HTML —
+        # everything that truthiness-tests the stored note (the Data & Privacy
+        # hint) must read "nothing here" right after a clear.
+        assert store.load()["html"] == ""
     finally:
         pad.deleteLater()
 

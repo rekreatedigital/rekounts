@@ -555,7 +555,14 @@ class Scratchpad(QtWidgets.QWidget):
         self._save_timer.stop()
         try:
             g = self.geometry()
-            self.store.save(self.edit.toHtml(), [g.x(), g.y(), g.width(), g.height()])
+            # An empty document still serializes to a ~600-byte Qt HTML
+            # skeleton, which reads as "there is a note" to everything that
+            # truthiness-tests the stored value — the Data & Privacy hint said
+            # "Saved automatically…" right after Clear note emptied the pad.
+            # An empty note is stored as an empty string, like the no-pad
+            # fallback already does.
+            html = self.edit.toHtml() if self.edit.toPlainText().strip() else ""
+            self.store.save(html, [g.x(), g.y(), g.width(), g.height()])
         except Exception:
             # A failed save must never propagate into Qt's event loop; the store
             # already logs the reason.
