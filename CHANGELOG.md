@@ -32,12 +32,26 @@ tail is removed from the end of your dictation without touching the real words
 in front of it.
 
 The important half of this is what it does **not** do. Your words are never
-removed on a hunch: text only goes if it is caption boilerplate in *every*
-clause **and** the model itself reports it heard no speech there. So
-"thanks for watching, talk soon" arrives intact, and if you dictate an actual
-YouTube outro on purpose, all of it arrives — measured, the same sentence
-spoken for real scores about 150× more speech-like than the hallucinated one.
-Turning **Ignore phantom phrases** off in Settings still turns off all of it.
+removed on a hunch. Nothing is deleted unless **both** of these are true: the
+model itself reports it heard no speech there, **and** the text is caption
+boilerplate in every clause. So "thanks for watching, talk soon" arrives
+intact, and if you dictate an actual YouTube outro on purpose, all of it
+arrives — measured, the same sentence spoken for real scores about 150× more
+speech-like than the hallucinated one. Turning **Ignore phantom phrases** off
+in Settings still turns off all of it.
+
+### Fixed: short dictations like "Thanks!" are no longer swallowed
+
+This one was already shipped, and it was the same root cause. If your whole
+dictation was a short pleasantry — "Thanks!", "Thank you.", "Ok thanks",
+"Bye.", "Thank you very much." — the app deleted it and told you to check your
+microphone. It was matching those words against a list without ever asking
+whether you had actually said them.
+
+Now it asks. Every one of those arrives, because the model reports it clearly
+heard speech; the identical words over silence still get dropped. Same for
+"Okay." on its own, "Thanks, bye.", "Thanks for listening.", "That's it for
+today." and "Thank you for joining us." — all real dictation, all delivered.
 
 ## [0.4.1] — 2026-07-25
 
