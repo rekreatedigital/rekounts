@@ -215,7 +215,7 @@ running from source — so it now says so, along with exactly how far it goes.
 Still **no macOS download**: an unverified app that silently does nothing
 because a permission was never granted is worse than no app.
 
-- New **[Running on macOS](README.md#running-on-macos)** section: setup, the
+- New **[Running on macOS](docs/macos.md)** section: setup, the
   three permissions macOS requires and where each one lives, the known limits,
   and the unknowns spelled out as unknowns.
 - The catch nobody expects, now prominent: running from source, macOS grants the

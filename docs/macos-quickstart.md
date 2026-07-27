@@ -317,7 +317,7 @@ because anything is known to be wrong:
   Rekounts tells you.
 
 The full picture, including what *is* proven and how, is in
-[Running on macOS](../README.md#running-on-macos). If you have an hour and want
+[Running on macOS](macos.md). If you have an hour and want
 to settle some of these, [macos-one-hour.md](macos-one-hour.md) is the ordered
 list, and [MACOS-TESTING.md](../MACOS-TESTING.md) is the exhaustive one — it has
 63 checkboxes and not one of them is ticked yet.

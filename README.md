@@ -2,762 +2,171 @@
 
 [![tests](https://github.com/rekreatedigital/rekounts/actions/workflows/tests.yml/badge.svg)](https://github.com/rekreatedigital/rekounts/actions/workflows/tests.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 
-Local voice dictation for Windows — a Wispr Flow–style daily driver. Hold a
-hotkey, speak, and cleaned-up text is typed into whatever app you are using.
-Your voice never leaves your machine.
+**Hold a key, talk, and your words get typed wherever your cursor is.** Email,
+Word, a chat box, your code editor — anywhere you can type, you can talk
+instead.
 
-> **Windows 10/11** is the supported, downloadable version. **macOS 12+ can run
-> it from source** — every platform seam has a real mac implementation, but no
-> download ships and nothing has yet been confirmed on a physical Mac. If you
-> just want to try it on your Mac, start at
-> **[the macOS quickstart](docs/macos-quickstart.md)**; the engineering picture
-> is in [Running on macOS](#running-on-macos). No Linux version.
+It runs on your own computer. Your voice is never uploaded, there's no account
+to make, and it's free — not a trial, not a "Pro" tier waiting for you later.
 
-- **One hotkey**: hold `Ctrl+Win` to talk, double-tap it to go hands-free.
-- **Local speech**: faster-whisper runs on your own CPU. No account, no cloud.
-- **A local Hub**: everything you dictate is searchable, with word counts,
-  streaks and a personal dictionary — all in a SQLite file on your disk.
-- **Free software**: GPL-3.0.
+**[Download for Windows](https://github.com/rekreatedigital/rekounts/releases/latest)**
+· [rekounts.com](https://rekounts.com)
 
-The whole on-screen footprint while you dictate is one small monochrome pill:
+> Windows 10/11 is the version you download. Macs can run it from source today,
+> but it's experimental and nobody has tried it on real Mac hardware yet —
+> [start here](docs/macos-quickstart.md) if you want to be the first. No Linux
+> version.
+
+While you're talking, the only thing on screen is a small pill above your
+taskbar:
 
 | | |
 |:---:|:---:|
-| ![The idle pill](docs/img/pill-idle.png) | ![The pill on hover, naming the hotkey](docs/img/pill-idle-hover.png) |
-| *Idle — barely there* | *Hover — it tells you the hotkey* |
-| ![Recording: cancel, live waveform, finish](docs/img/pill-recording.png) | ![Processing dots](docs/img/pill-processing.png) |
-| *Recording — ✕ · live waveform · ✓* | *Processing — about to type* |
-| ![The idle pill with an amber pending dot](docs/img/pill-pending.png) | ![Recording, with the pending dot still showing](docs/img/pill-recording-pending.png) |
-| *A setting is still catching up* | *…and it stays visible while you dictate* |
+| ![The idle pill](docs/img/pill-idle.png) | ![Recording: cancel, live waveform, finish](docs/img/pill-recording.png) |
+| *Idle — barely there* | *Recording — cancel · waveform · finish* |
 
-Settings apply as you change them. The two that can't — loading a different
-speech model, and changing your microphone mid-recording — say so with that
-amber dot instead of applying silently; hover it and the pill spells out what
-is still catching up:
+## Getting it
 
-![The hovered pending pill reading "Loading Medium… dictation still uses Small."](docs/img/pill-pending-hover.png)
-
-See the [privacy page](docs/privacy.md) for exactly what is stored and the only
-moments the app touches the network, and the
-[changelog](CHANGELOG.md) for what changed.
-
-## Install — the easy way (no Python)
-
-1. Download **`Rekounts-Setup-<version>.exe`** from the
+1. Download **`Rekounts-Setup.exe`** from the
    [latest release](https://github.com/rekreatedigital/rekounts/releases/latest)
    and run it.
-2. **Windows will probably warn you.** You will see *"Windows protected your PC"*
-   — click **More info**, then **Run anyway**. This happens because the installer
-   is not code-signed (a signing certificate costs money; it is a future
-   decision), not because anything is wrong with it. You only have to do this
-   once.
-3. Click through: the GPL-3.0 licence, where to install it, and two optional
-   boxes — a desktop shortcut, and whether to start Rekounts when you sign in.
-   Both are off unless you tick them, and you can change your mind later in
-   Settings.
-4. The **first launch is slow** — a minute or two while it downloads the speech
-   model (~486 MB for the default `small`) once, from this project's own release
-   host. After that it starts in a few seconds and works with the network
-   unplugged. Nothing is downloaded from Hugging Face — see
-   [Where the speech models come from](#where-the-speech-models-come-from).
-5. Look for the **Rekounts tray icon** near the clock (you may need to click
-   the `^` to show hidden icons). A small dark **pill** also appears just above
-   your taskbar — that is how you know it is listening. It fades to a faint hint
-   when idle and brightens when you hover it.
+2. **Windows will warn you.** You'll see *"Windows protected your PC"* — click
+   **More info**, then **Run anyway**. That happens because the installer isn't
+   code-signed, not because anything's wrong with it. Once, and never again.
+3. Click through the installer. Two optional boxes: a desktop shortcut, and
+   whether to start Rekounts when you sign in. Both are off unless you tick
+   them, and you can change your mind later.
+4. **The first launch is slow and looks like nothing is happening.** It's
+   downloading the speech model once — about 486 MB. Give it a few minutes.
+   After that it starts in seconds and works with your Wi-Fi off.
+5. Look for the Rekounts icon near the clock (you may need to click the `^` to
+   show hidden icons).
 
-**No administrator rights, no UAC prompt.** It installs for your account only,
-into `%LOCALAPPDATA%\Programs\Rekounts`, and appears in **Settings → Apps** like
-any other program.
+No administrator rights and no UAC prompt — it installs for your account only.
+**To upgrade**, just run the newer installer over the top; it keeps your
+settings, your history and the model you already downloaded.
 
-**Upgrading** is the same download — run the newer installer over the old one.
-It will ask you to close Rekounts if it is running, and it never touches your
-settings, history or downloaded model.
+Prefer not to install anything? There's a portable ZIP on the same page — unzip
+it anywhere and run `Rekounts.exe`.
 
-**Uninstalling** leaves your data alone by default. `%APPDATA%\Rekounts` — your
-settings, your dictation history and the speech model you downloaded — is only
-deleted if you tick the box on the uninstaller that says so.
+## Talking to it
 
-### Or the portable ZIP
-
-Prefer not to install anything? Download **`Rekounts-<version>-win64.zip`** from
-the same release page, unzip it **anywhere you like**, and run `Rekounts.exe`
-from inside the folder. Keep the folder together — the `.exe` needs the files
-next to it. Everything works the same; you just manage the folder yourself, and
-there is no Start-menu entry and no uninstaller.
-
-To have it start with Windows, see [Run on startup](#run-on-startup) below.
-
-## Install — from source (developers)
-
-You need **Python 3.11+** from https://www.python.org/downloads/ (tick
-"Add Python to PATH" during install).
-
-```bat
-setup.bat    :: creates .venv and installs everything (~1 GB, one time)
-run.bat      :: starts the app
-```
-
-Or by hand:
-
-```bat
-python -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt
-.venv\Scripts\python -m rekounts
-```
-
-> **If `python` opens the Microsoft Store** instead of running, turn off the
-> alias: Settings → Apps → Advanced app settings → App execution aliases → turn
-> OFF `python.exe` / `python3.exe`.
-
-## Running on macOS
-
-> **Just want to dictate on your MacBook?** →
-> **[docs/macos-quickstart.md](docs/macos-quickstart.md)** is the same thing
-> written for a person rather than an engineer: eight numbered steps, what you
-> should see after each one, and the permission trap spelled out. If it goes
-> wrong, [docs/macos-help-prompt.md](docs/macos-help-prompt.md) is a block to
-> paste into whatever AI you use, so it can help without knowing this project.
->
-> The rest of this section is the engineering picture — what is implemented,
-> what is genuinely unknown, and why there is no download.
-
-**Status: experimental, from source only, and not yet confirmed on a physical
-Mac.** Read that as written. The macOS port is complete in the sense that every
-platform-specific piece has a real mac implementation — pasting via Quartz
-events, NSPasteboard clipboard preservation, launch-at-login as a LaunchAgent,
-data under `~/Library/Application Support/Rekounts`, permission checks that tell
-you which consent is missing — and CI installs the full mac dependency set and
-executes those code paths on every push. What CI cannot do is grant macOS
-permissions, so the behaviours that depend on them have been *reasoned about*,
-not *observed*. The open ones are listed below, and the checklist someone with a
-Mac should work through is [MACOS-TESTING.md](MACOS-TESTING.md).
-
-There is deliberately **no macOS download**. An unverified `.app` that silently
-does nothing because a permission was never granted is worse than no `.app`.
-
-### Setup
-
-The terse version; [the quickstart](docs/macos-quickstart.md) is the same thing
-step by step, for someone who has not done this before.
-
-You need **macOS 12 (Monterey) or newer** and Python **3.11 or 3.12**
-(`brew install python@3.12`, or python.org). Not 3.13+: the pinned
-`PySide6==6.7.2` declares `Requires-Python: <3.13`, so the install fails.
-
-```sh
-git clone https://github.com/rekreatedigital/rekounts.git && cd rekounts
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt      # ~800 MB, once
-python -m pytest -q                  # sanity check: expect all green
-python -m rekounts                   # or: python launch.py
-```
-
-CI installs that dependency set on an **Apple Silicon** runner on every push, in
-about 23 seconds. **Intel has never been installed by CI or by hand**, so it is
-untested rather than known-good — if you are on one, whether `pip install`
-even completes is itself a useful data point.
-
-The first launch downloads the speech model once (~486 MB for the default
-`small`) to `~/Library/Application Support/Rekounts/models/`. After that it runs
-with the network unplugged, exactly as on Windows.
-
-Rekounts lives in the **menu bar**. Run from source it also shows a normal
-Dock icon — the no-Dock-icon treatment (`LSUIElement`) only exists in the
-future `.app` bundle, which nothing ships yet. There is no window until you
-open the Hub.
-
-### The permissions, and the thing that surprises everyone
-
-macOS gates each of the app's three core abilities behind a separate consent,
-and **denies them silently** — no dialog, no error, the events simply never
-arrive. Rekounts checks at startup and names any it can see is missing, so that
-a missing permission does not just look like a broken app.
-
-That check is weaker than it reads, and the weakness is measured rather than
-theoretical: on the `macos-latest` CI runner
-`CGPreflightListenEventAccess()` returns `True` with nobody having granted
-anything ([MACOS-TESTING.md §2](MACOS-TESTING.md)). So **no warning is not
-evidence that Input Monitoring is granted** — grant it either way.
-
-| Consent | What stops working without it | Where |
-| --- | --- | --- |
-| **Input Monitoring** | the global hotkey — nothing responds at all | System Settings → Privacy & Security → Input Monitoring |
-| **Accessibility** | pasting the dictated text into other apps | …→ Accessibility |
-| **Microphone** | recording (this one prompts by itself on first use) | …→ Microphone |
-
-> ### ⚠️ Running from source grants the permissions to your TERMINAL, not to Rekounts
->
-> This is the part that catches people out. macOS attributes permissions to the
-> **running process's bundle**, and when you launch with `python -m rekounts`
-> that bundle is Terminal.app, iTerm, or whatever you typed the command into.
-> So:
->
-> * The entry you tick under Input Monitoring and Accessibility is **Terminal**
->   (or iTerm2, or VS Code if you run it from an integrated terminal) — you will
->   look for "Rekounts" in those lists and it will not be there. The app's own
->   startup notice says *"Enable Rekounts under…"*, which is the right wording
->   for the packaged `.app` and the wrong wording for a from-source run
->   (`rekounts/permissions.py`); read it as "enable your terminal".
-> * Everything you run from that terminal afterwards inherits the same grants.
->   That is a real, permanent widening of what a shell on your Mac may do, and
->   it is worth being deliberate about — consider a dedicated terminal app for
->   this rather than the one you use all day.
-> * Launching from a *different* terminal means granting again, per app.
-> * After granting, **quit and reopen the terminal**, then relaunch Rekounts.
->   macOS only re-reads the grant when the process starts.
->
-> A packaged, signed `.app` would get its own identity and its own three grants,
-> which is the main reason packaging matters here and not just cosmetically —
-> [docs/macos-packaging.md](docs/macos-packaging.md).
-
-### What is genuinely unknown
-
-Not "probably fine" — unknown, because it has never been executed on hardware.
-These are in priority order and are exactly what
-[docs/macos-one-hour.md](docs/macos-one-hour.md) works through:
-
-1. **Long push-to-talk holds.** The recording watchdog reads physical key state
-   through `CGEventSourceKeyState`. If that lies about held keys under macOS's
-   permission model, a hold could self-release about a third of a second in.
-   There is a gate meant to prevent it (the watchdog is only enabled once the
-   Input Monitoring preflight passes) and CI confirms the gate reads the real
-   preflight — but not that the poll then tells the truth.
-2. **The dictation pill staying visible.** Its entire job is to be on screen
-   while *another* app is frontmost. macOS hides tool windows on app deactivate;
-   three layers of countermeasure are in place and none has been seen working.
-   `REKOUNTS_MAC_OVERLAY_NATIVE=0` disables the native ones if they misbehave.
-3. **The Scratchpad taking focus.** It is plain Qt with no platform branches at
-   all, and it was written before macOS was in scope. Dictation routes into the
-   note only while the note is the *active* window, and a frameless window in a
-   menu-bar-only app is precisely the case where "active" gets complicated.
-4. **Whether a `.app` builds and runs.** `Rekounts-macos.spec` and the icon and
-   entitlements it needs are written; PyInstaller has never been run on them.
-
-### Known limits on macOS (by design, not bugs)
-
-- **Focus tracking is per-app, not per-window.** Windows gives a stable handle
-  per window; macOS does not, cheaply, so "did focus move while I transcribed?"
-  is answered at the granularity of the frontmost *application*. Switching
-  between two windows of the same app will not abort a delivery.
-- **Hotkey letters and digits assume a US/ANSI layout.** The same trade the
-  Windows path already makes. Modifier-only combos (the default `Ctrl+Cmd`) and
-  function keys are layout-independent.
-- **No GPU option.** The speech engine's only accelerator backend is NVIDIA
-  CUDA, and there is no macOS build of it — so Settings shows no **Processing**
-  row on a Mac at all.
-- The default hotkey `ctrl+win` is **Ctrl+Cmd** on a Mac keyboard — the config
-  token is shared across platforms; only the label differs.
-
-If you get stuck, [docs/macos-help-prompt.md](docs/macos-help-prompt.md) is a
-self-contained block to paste into any AI assistant — it carries the setup, the
-three permissions, the terminal-attribution trap and the known-unknowns above,
-so the assistant can diagnose without this repo in front of it.
-
-If you do try it, the most useful thing you can send back is a filled-in
-[MACOS-TESTING.md](MACOS-TESTING.md) with
-`~/Library/Application Support/Rekounts/logs/rekounts.log` attached — including
-the parts that worked, since "confirmed working on hardware" is currently a list
-of zero items.
-
-## How to dictate
-
-One hotkey — **`Ctrl+Win`** by default — does everything:
+One key — **`Ctrl+Win`** by default — does everything:
 
 | You do | What happens |
 | --- | --- |
-| **Hold** it, speak, **release** | Push-to-talk. Your text is inserted when you let go. |
+| **Hold** it, speak, **release** | Your text is inserted when you let go. |
 | **Double-tap** it | Hands-free — it keeps recording while you talk. |
 | **Tap** it while hands-free | Stops and inserts. |
-| Tap once while idle | Nothing (it just reminds you how it works). |
 
-While recording, the pill expands into **✕ │ waveform │ ✓** — click **✕** to
-throw the recording away, or **✓** to finish it early. The idle pill is faint
-until you hover it, then it brightens and tells you the current hotkey.
+While you're recording, the pill expands into **✕ │ waveform │ ✓** — click **✕**
+to throw the recording away, or **✓** to finish early. A hands-free recording
+you forget about stops itself after 10 minutes, and warns you 30 seconds before.
 
-A hands-free recording you forget about stops itself after 10 minutes (you can
-change this in Settings), and it warns you about 30 seconds before it does.
-
-## The tray menu
-
-Right-click the tray icon:
-
-- **Open Dashboard** — the Hub (below).
-- **Open Scratchpad** — the sticky note (below).
-- **Settings…** — jumps straight to the Hub's Settings page.
-- **Microphone** / **Language** — quick switches without opening Settings.
-- **Check for Updates** — asks GitHub whether there is a newer **release** than
-  the version you are running, and tells you either way. Click the notification
-  to open the release page. Only when clicked, unless you switch on
-  **Check for updates automatically** (Settings → System, off by default) — with
-  that on, it also asks once per launch and stays silent unless there is
-  actually something newer. Either way it downloads nothing and installs
-  nothing; you decide.
-- **Help** — opens this README in your browser.
-- **Send Feedback…** — opens a prefilled GitHub issue or email, already
-  written and not yet sent (below).
-- **Quit**.
+Don't like `Ctrl+Win`? Change it in Settings.
 
 ## The Scratchpad
 
 <p align="center">
   <img src="docs/img/scratchpad.png" width="380"
        alt="The Scratchpad — a dark sticky note with a bulleted list and a formatting toolbar" />
-  <img src="docs/img/scratchpad-hover.png" width="380"
-       alt="The same note with the pointer over it — close and minimize faded in" />
-  <br /><em>At rest, and with the pointer over it</em>
+  <br /><em>A note that's already listening</em>
 </p>
 
-Sometimes you just want to dictate a note, and opening Notepad to catch it is a
-step too many. **Open Scratchpad** from the tray gives you a floating note that
-is already listening.
+Sometimes you just want to get a thought down, and opening Notepad to catch it
+is a step too many. Right-click the tray icon → **Open Scratchpad** and you get
+a floating note that's already listening.
 
-- **Dictation lands in the note while the note is focused.** Click into anything
-  else and dictation goes there instead, exactly as it always has — it is the
-  same rule you already know, and the pad is simply one more place your cursor
-  can be. Nothing goes through the clipboard on the way, so whatever you had
-  copied stays copied.
-- **It is a real note, not a transcript.** Edit it, and format it with the strip
-  along the bottom: **bold**, *italic*, underline, strikethrough and bullets.
-  Dictated text arrives as plain text in whatever formatting the cursor is
-  already in.
-- **It remembers.** Your text, its size and its position are all still there
-  next time you open it — and next time you start Rekounts.
-- **Minimal by design.** No title bar; drag it by any empty part of the note,
-  resize it from any edge. Close and minimize fade in only when your pointer is
-  over it. Closing hides the note, it never deletes it.
+Dictate into it while it's focused; click into anything else and your words go
+there instead, exactly like always. You can edit it and format it — bold,
+italic, underline, strikethrough, bullets — and your note, its size and its
+position are all still there tomorrow.
 
-Turn the whole feature off in **Settings → System → Scratchpad** and the tray
-entry disappears. Your note is kept either way.
+No title bar: drag it by any empty part, resize from any edge, and the close and
+minimize buttons only fade in when your pointer is over it. Closing hides the
+note; it never throws it away.
 
 ## The Hub
 
 <p align="center">
   <img src="docs/img/hub-dictation.png" width="820"
        alt="The Hub's Dictation page — history grouped by day" />
-  <br /><em>Dictation — everything you have said, grouped by day, searchable</em>
+  <br /><em>Everything you've dictated, grouped by day, searchable</em>
 </p>
 
-**Open Dashboard** gives you five pages, all local:
-
-- **Dictation** — everything you have dictated, newest first, grouped by day,
-  with a search box. Copy or delete a single entry, or **Clear all**.
-- **Insights** — words today / last 7 days / all time, your average
-  words-per-minute, current and longest daily streak, and a 21-day bar chart.
-- **Dictionary** — add names and jargon it keeps mishearing, with an optional
-  "sounds like" spelling. Words are fed to the recognizer as context, and
-  "sounds like" mishearings are auto-corrected after transcription.
-- **Settings** — a full page inside the Hub. Every change applies the moment
-  you make it: no Save button, no restart.
-- **Account** — a local display name and avatar, shown in the Hub sidebar.
-  There is no sign-in and no server; this is cosmetic.
-
-<p align="center">
-  <img src="docs/img/hub-insights.png" width="820"
-       alt="The Insights page — stat cards and a 21-day bar chart" />
-  <br /><em>Insights — words, streaks, and the last three weeks</em>
-</p>
-
-<p align="center">
-  <img src="docs/img/hub-dictionary.png" width="820"
-       alt="The Dictionary page — custom words with sounds-like spellings" />
-  <br /><em>Dictionary — the words it kept mishearing, taught once</em>
-</p>
-
-<p align="center">
-  <img src="docs/img/hub-settings.png" width="820"
-       alt="The Settings page — the General and Audio sections" />
-  <br /><em>Settings — a page inside the Hub, applied the moment you change it</em>
-</p>
-
-> These four are generated by `tools/capture_hub_shots.py`, which renders the
-> real window against a throwaway database of sample dictations — the history,
-> the numbers and the streaks in them are made up, not anyone's.
-
-## Settings
-
-Settings are a page inside the Hub (tray → **Settings…** jumps straight there).
-**Every change applies the moment you make it** — there is no Save button and
-no restart. Switching the speech model reloads it in the background and tells
-you when it is ready; everything else takes effect at once or on your next
-dictation.
-
-- **General** — the dictation hotkey (click the box and press the combo you
-  want; combos the app cannot listen for are rejected rather than saved, and a
-  **Reset** button puts it back to `Ctrl+Win`); language (Auto / English /
-  Tagalog); the speech model — `small` (default, balanced, ~486 MB), `base`
-  (fastest, ~148 MB), `medium` (most accurate offered, ~1.5 GB) — each size
-  downloads once, the first time you pick it, from this project's own release
-  host (see the **Accuracy guide** below for how to choose). A **Processing**
-  row (`CPU` / `Auto`) appears only when this run could actually use a GPU —
-  that is, from source on Windows or Linux. The installed app is a CPU-only
-  build and macOS has no CUDA at all, so there the row is simply not shown
-  rather than offering a choice that changes nothing. Your `device` setting in
-  `config.json` is read and obeyed either way.
-- **Audio** — microphone, with **Refresh** and a **Test** button (you want
-  "Heard you clearly"); **Sound effects**, the short tone when dictation
-  starts and stops; and its **Volume**.
-- **Behavior** — insertion mode: `paste` (default; your clipboard is preserved)
-  or `keystroke` (types the characters; never touches the clipboard); the
-  text cleanup toggles
-  (remove fillers, auto-capitalize, fix punctuation spacing, remove repeated
-  words and repeated short phrases — "I'm gonna I'm gonna" → "I'm gonna" — and
-  **remove hedge phrases**, which drops "you know", "I mean", "like" and
-  "right" only when commas mark them as asides, so "I like it" and "turn
-  right" are never touched); **Paste long dictations**, which routes a long
-  transcript through the clipboard because typing one out arrives mangled;
-  **Catch the first word** (the pre-roll buffer); the maximum recording
-  length; and the phantom-phrase filter.
-- **System** — launch at login, the on-screen pill, the **Scratchpad**, tray
-  notifications, and the automatic update check.
-- **Data & Privacy** — the dictation-history switch, **Clear all**,
-  **Clear note…** for the Scratchpad, **Open folder** shortcuts to where your
-  data lives and to the diagnostic log, and **Send feedback…**.
-
-Only a few tuning knobs remain config-file-only — edit
-`%APPDATA%\Rekounts\config.json` and relaunch: `beam_size` (transcription
-beam width) and `preroll_seconds`.
-
-## Troubleshooting
-
-- **Nothing gets typed:** Settings → **Test** your mic. "Silent" means wrong
-  microphone or muted in Windows.
-- **"Another instance is already running"** in the log: it is already running —
-  check the tray (and the hidden-icons `^` flyout).
-- **The hotkey does nothing / clashes with another app:** change it in Settings.
-- **The hotkey ignores you only while an "as administrator" window is focused:**
-  Windows won't let a normal-privilege app see keystrokes aimed at an elevated
-  window (the same UIPI rule that blocks typing *into* admin apps). Click a
-  normal window and the hotkey works again; or run Rekounts as administrator
-  too if you dictate into elevated apps a lot. (This is a Windows restriction,
-  not a bug — the hotkey engine deliberately does not use `RegisterHotKey`, which
-  can't do modifier-only combos like `Ctrl+Win` or push-to-talk at all.)
-- **Text went nowhere in an admin app:** Windows forbids a normal app from
-  typing into an elevated one. You will get a notice saying so; your text is
-  still saved in the Hub, so you can copy it from there.
-- **Tagalog accuracy is rough:** switch **Model** to `medium` and speak clearly.
-- **Anything else:** `%APPDATA%\Rekounts\logs\rekounts.log` — Settings →
-  **Data & Privacy** → **Diagnostic log** → **Open folder** takes you straight
-  there. To capture a detailed hotkey trace for a bug report, set the
-  environment variable `REKOUNTS_LOG_LEVEL=DEBUG` before launching and
-  reproduce the problem.
-
-## Telling us it broke
-
-<p align="center">
-  <img src="docs/img/feedback-dialog.png" width="620"
-       alt="The Send Feedback window: two channel buttons, the diagnostics block, Copy and Save — and no Send button" />
-  <br /><em>Everything that would leave, on screen before any of it does</em>
-</p>
-
-Tray menu → **Send Feedback…** (or Settings → **Data & Privacy**). It opens a
-window that shows you a short diagnostics block — versions, and four settings —
-and offers two ways to send it:
-
-- a **prefilled GitHub issue**, which is public, searchable and gets replies,
-  but needs a GitHub account; or
-- a **prefilled email**, which needs no account at all.
-
-Pick either and it opens in your browser or mail client **unsent**, for you to
-read, edit and send yourself. Rekounts has no server and transmits nothing: the
-window has **Copy** and **Save**, and no Send button. Your transcripts,
-Scratchpad, Dictionary and history are never part of it, and your user name,
-machine name and folder paths are stripped out — see
-[docs/privacy.md](docs/privacy.md).
-
-## Where your stuff lives
-
-| What | Path |
-| --- | --- |
-| Settings | `%APPDATA%\Rekounts\config.json` |
-| Dictation history + dictionary | `%APPDATA%\Rekounts\history.db` |
-| Scratchpad note | `%APPDATA%\Rekounts\scratchpad.json` |
-| Logs | `%APPDATA%\Rekounts\logs\rekounts.log` |
-| Speech models | `%APPDATA%\Rekounts\models\<name>\` |
-| The program itself (if you used the installer) | `%LOCALAPPDATA%\Programs\Rekounts` |
-
-On macOS the same files live under
-`~/Library/Application Support/Rekounts/` (`config.json`, `history.db`,
-`scratchpad.json`, `logs/`, `models/`), and launch-at-login is a LaunchAgent at
-`~/Library/LaunchAgents/com.rekreatedigital.rekounts.plist` rather than a
-registry entry.
-
-Note that those are two different places on purpose: **uninstalling removes the
-program, not your data.** `%APPDATA%\Rekounts` survives uninstalls, reinstalls
-and upgrades unless you tick the uninstaller's "also delete my settings,
-history and downloaded model" box.
-
-Full detail — including what is *not* stored — is in
-[docs/privacy.md](docs/privacy.md).
-
-### Upgrading from TalkativeAI
-
-TalkativeAI was this app's placeholder name. If you used it, **you do not have to
-do anything** — the first launch of Rekounts brings your settings, history,
-dictionary and downloaded models across from `%APPDATA%\TalkativeAI`, and moves
-your **Launch at login** entry to the new name.
-
-Quit the old app first if it is still in your system tray: both versions listen
-for the same hotkey, so Rekounts refuses to start alongside it and tells you to
-close it. Your old `%APPDATA%\TalkativeAI` folder is left behind on purpose so
-you can roll back; delete it whenever you are happy.
-
-## Where the speech models come from
-
-The speech models are downloaded from **this project's own release host**:
-
-```
-https://github.com/rekreatedigital/rekounts-models
-```
-
-The app **never contacts `huggingface.co`** — not on first run, not ever. That is
-structural rather than a setting: the model files are fetched up front and the
-speech engine is handed a local directory path, so there is no code path left
-that could reach out for anything.
-
-| Model | Download | Notes |
-| --- | --- | --- |
-| `base` | ~148 MB | Fastest on any CPU. |
-| `small` | ~486 MB | Noticeably better on accented or natural speech. |
-| `medium` | ~1.5 GB | Most accurate, clearly slower on CPU. |
-
-Each download is verified against a SHA256 hash recorded in
-[`rekounts/models.py`](rekounts/models.py) before it is used, so a corrupted
-or tampered file is rejected instead of run. Interrupted downloads resume rather
-than starting over.
-
-**Already have the model?** If a matching copy exists in your
-`%USERPROFILE%\.cache\huggingface` cache from another tool, Rekounts copies it
-into its own folder on first run and downloads nothing at all. Your cache is left
-untouched.
-
-The models are SYSTRAN's MIT-licensed CTranslate2 conversions of OpenAI's
-MIT-licensed Whisper models, redistributed unmodified — see
-[docs/model-license.md](docs/model-license.md) for the attribution and license
-notices, and for how to add another model.
-
-## Run on startup
-
-Flip **Launch at login** in Settings → System. The app adds a per-user entry
-under `HKCU\...\CurrentVersion\Run` and re-checks it at every launch, so it
-fixes itself if you move the app folder. (Turning the switch off removes the
-entry.) Alternatively, drop a shortcut to `Rekounts.exe` or `run.bat` into
-`shell:startup` (Win+R → `shell:startup`).
-
-The installer's **"Start Rekounts automatically when I sign in to Windows"**
-checkbox is the *same* switch, not a second one — it writes the same registry
-entry, so the Settings toggle reads back ON afterwards and turning it off in
-either place turns it off everywhere. If you have it on already, re-running the
-installer leaves it on.
-
-## Accuracy guide
-
-Accuracy comes from two things you can change here: the **model** (the engine)
-and, if you have one, a **GPU**. This is deliberately a *local* app — no cloud,
-no account — so it can't match a huge server model, but a good local setup gets
-close for everyday dictation.
-
-**Picking a model.** Bigger models mishear fewer words, especially on accents,
-names and fast or mumbled speech — but they're much slower on a CPU. Processing
-time below is a fraction of the clip length — so 0.20× means a 10-second
-dictation is ready in ~2 seconds. Measured on a fast CPU (AMD Ryzen 7 7800X3D,
-int8); **older machines will be proportionally slower**, so the ranking matters
-more than the absolute numbers:
-
-| Model | Relative speed (CPU) | Good for |
-| --- | --- | --- |
-| `base` | ~0.09× (fastest) | old/weak machines, quick notes |
-| `small` | ~0.20× (**default**) | the everyday sweet spot on CPU |
-| `medium` | ~0.6–0.7× | more accuracy when you'll wait a beat |
-| `distil-large-v3` | ~0.8× CPU | near top accuracy, better on a GPU |
-| `large-v3-turbo` | ~0.8× CPU | best accuracy — really wants a GPU |
-
-On CPU, `medium` and the large models take several seconds per dictation; they
-shine on a GPU. `small` is the default because it's a clear accuracy step up
-from `base` while still feeling instant on CPU.
-
-> **Measure it on your own voice.** Whisper's own numbers rank the models, but
-> the only ranking that matters is on *your* accent and *your* mic. `tools/
-> asr_bench.py` does exactly that: record ~10 short clips, write down what you
-> said, and it reports word error rate and speed per model. Nothing you record
-> leaves your machine or enters git. See the header of that file for the steps.
-
-**Using a GPU (optional) — this is the big win.** An NVIDIA GPU doesn't just
-make the big models usable, it makes them *faster than `small` on CPU*. Measured
-on an RTX 5070 Ti (16 GB, `int8_float16`), same clips as above:
-
-| Model | GPU | CPU | Speed-up |
-| --- | --- | --- | --- |
-| `small` | ~0.06× | ~0.20× | ~3.5× |
-| `medium` | ~0.08× | ~0.6–0.7× | ~7× |
-| `distil-large-v3` | ~0.04× | ~0.73× | ~18× |
-| `large-v3-turbo` | ~0.04× | ~0.72× | ~16× |
-
-(Figures vary ~10–15% run to run depending on GPU clocks; the ranking is stable.)
-
-Note the shape of that table: on a GPU, **`large-v3-turbo` is both the most
-accurate option and among the fastest** (turbo and distil have far fewer decoder
-layers than `large-v3`). So if you have a working NVIDIA GPU, there's little
-reason not to run `large-v3-turbo`.
-
-> **Availability note:** the in-app Model list currently offers `base`, `small`
-> and `medium`. The two large models are benchmarked here but not yet published
-> to the app's release host — they'll appear in the dropdown the moment they
-> are. Until then `tools/asr_bench.py` can still run them for measurement.
-
-To turn it on, set **Processing → Auto** in Settings. Auto probes whether the
-GPU can *actually transcribe* — not just load a model, since a missing CUDA
-library only fails on the first real use — and silently falls back to CPU if it
-can't, so it's always safe to leave on.
-
-**This needs a from-source install.** The packaged `.exe` deliberately excludes
-the whole CUDA stack (`Rekounts.spec`), so there is no GPU for Auto to find in
-it — which is why the **Processing** row is not shown in the installed app at
-all, rather than offering a switch that always lands on CPU.
-
-GPU needs the CUDA runtime libraries installed in the same environment. All
-three of these are required (cuBLAS depends on cudart, so leaving it out gives a
-confusing `cublas64_12.dll is not found`):
-
-```
-pip install nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-cuda-runtime-cu12
-```
-
-Without them, Auto simply stays on CPU — they are **not** a required dependency
-of the app. Verified working on an RTX 50-series (Blackwell, `sm_120`) card with
-ctranslate2 4.8.1 and a CUDA 13 driver; the CUDA-12 wheels are correct even on a
-CUDA-13 driver. Power users can force `"device": "cuda"` in `config.json`, but
-`Auto` is the safe choice.
-
-**Mic matters as much as the model.** The model only ever hears what your mic
-captures. A close, clean mic beats a distant laptop mic more than one model size
-does. Use Settings → **Test** to confirm "Heard you clearly". Heavy virtual-mic
-processing (noise suppression, "AI" voice effects) can smear the audio the model
-sees — if accuracy is poor, try your plain hardware mic.
-
-**What the Dictionary is (and isn't).** The Dictionary in the Hub is
-*personalization*, not the accuracy engine. It biases recognition toward names
-and jargon you add (your app's product names, colleagues' names, acronyms) so
-the model spells them your way. It won't fix general mishearing — that's the
-model's job. Use it for the handful of words it keeps getting wrong.
-
-**Coming later.** A local AI cleanup pass (grammar/punctuation polish, all
-on-device) is planned to close more of the gap to cloud tools — separate from
-this raw-accuracy work.
-
-## CPU vs GPU
-
-Transcription runs on **CPU by default**, which is fast enough for dictation
-with the `small` model on a modern machine. To use an NVIDIA GPU, run from
-source and set **Processing → Auto** in Settings (or `"device": "auto"` in
-`config.json`) — see the **Accuracy guide** above for what the GPU needs and how
-the safe fallback works.
-
-**The Processing row is shown only where the choice can do something:** a
-from-source run on Windows or Linux. The installed app is a CPU-only build, and
-on a Mac the speech engine (CTranslate2) has only a CUDA backend, so `auto`
-finds nothing to use and runs on the CPU. In both cases the row is absent
-rather than present-and-inert. `"device"` in `config.json` is still read and
-still obeyed everywhere, so a config file moves between the two without
-surprises.
-
-## Building the standalone app
-
-```bat
-build.bat
-```
-
-One run produces everything a release needs, in `dist\`:
-
-| | |
-| --- | --- |
-| `Rekounts\Rekounts.exe` | the app (~380 MB — it bundles Python, Qt and the speech engine) |
-| `Rekounts-<version>-win64.zip` | the portable download |
-| `Rekounts-Setup-<version>.exe` | the installer |
-
-The speech model is *not* bundled; it downloads once on first run from this
-project's own release host (see
-[Where the speech models come from](#where-the-speech-models-come-from)).
-
-The installer step needs **Inno Setup 6.3 or newer**, a build-time dependency
-only — nothing in the app uses it:
-
-```bat
-winget install -e --id JRSoftware.InnoSetup
-```
-
-Without it, `build.bat` still builds the app and the ZIP, says the installer was
-skipped, and exits successfully. `build.bat --no-installer` skips it deliberately.
-The installer script itself is [installer/rekounts.iss](installer/rekounts.iss);
-its header explains the three guarantees it exists to keep (no admin, your data
-survives an uninstall, one launch-at-login mechanism).
-
-### The icon
-
-`assets/icon.ico` is committed, but generated — regenerate it (and the
-installer's wizard bitmaps) with:
-
-```bat
-.venv\Scripts\python tools\make_icon.py
-```
-
-The mark is the site favicon transcribed into that script, which is the icon's
-source of record. The same `.ico` is used by the `.exe`, the tray, the app's
-windows, the installer and the Start-menu shortcut.
-
-The same command also writes `assets/icon.icns` — the macOS bundle icon, ten
-sizes from 16 to 1024 px. It is generated from the identical mark and committed
-like the `.ico`, and writing it needs no Mac.
-
-### Publishing a speech model (maintainers)
-
-Model files are release assets on a separate public repo, so downloads keep
-working even while this repo is private. Adding or refreshing one is a single
-command:
-
-```bat
-.venv\Scripts\python scripts\publish_models.py base      :: fetch, verify, upload
-.venv\Scripts\python scripts\publish_models.py --all
-.venv\Scripts\python scripts\publish_models.py turbo --hashes --upstream org/repo
-```
-
-It fetches the upstream files, checks their SHA256 against the manifest in
-`rekounts/models.py` (refusing to publish on a mismatch), and uploads them
-with the required license notices. `--hashes` prints the manifest entry for a
-model you are adding; `--dry-run` does everything except upload.
-
-## Development
-
-```bat
-.venv\Scripts\python -m pytest        :: 1,300+ unit tests
-```
-
-CI installs `requirements-test.txt` (a much smaller set than the runtime
-`requirements.txt`) and runs the suite on Windows (Python 3.11 and 3.12) plus
-`ruff check .`; both are quick enough to run locally the same way. The suite
-also runs on Linux and macOS in CI — the app itself is Windows-only, but the
-tests fake the Windows-specific pieces, and keeping them green off-Windows
-protects the seam a future macOS port will use. Hardware- and UI-dependent
-behavior is covered by
-[docs/manual-smoke-test.md](docs/manual-smoke-test.md). See
-[ARCHITECTURE.md](ARCHITECTURE.md) for the module map and data flow.
-
-The version string lives in exactly one place, `rekounts/__init__.py`;
-`pyproject.toml` and the `.exe`'s file properties both read it from there.
-
-## License
-
-Rekounts is free software under the **GNU General Public License v3.0** — you
-can use it, read it, change it, and share it, as long as anything you pass on
-stays free under the same license. See [LICENSE](LICENSE) for the full text.
-
-Copyright (C) 2026 Rekreate Digital.
-
-## Contributing
-
-Pull requests are welcome at
-[github.com/rekreatedigital/rekounts](https://github.com/rekreatedigital/rekounts).
-The short version: keep the tests green; contributions ship under GPL-3.0 with
-a light CLA. See [CONTRIBUTING.md](CONTRIBUTING.md) for the (brief, friendly)
-details, including the licensing terms.
+Right-click the tray icon → **Open Dashboard**. Five pages, all on your machine:
+
+- **Dictation** — everything you've said, newest first, with a search box. Copy
+  or delete any entry, or clear the lot.
+- **Insights** — words today, this week and all time, your words per minute,
+  your daily streak, and the last three weeks as a chart.
+- **Dictionary** — teach it names and jargon it keeps getting wrong, with an
+  optional "sounds like" spelling.
+- **Settings** — every change applies the moment you make it. No Save button,
+  no restart.
+- **Account** — a local display name and picture for the sidebar. There's no
+  sign-in and no server; it's decoration.
+
+## Your privacy, in short
+
+Your voice is recorded into memory, transcribed on your own processor, and
+never written to disk. Nothing about you is sent anywhere.
+
+The app makes exactly **two** network requests, ever: downloading the speech
+model the first time you use it, and asking GitHub whether there's a newer
+version when you click **Check for Updates**. That's it. No analytics, no
+telemetry, no account, no server — there's nothing to breach because there's
+nothing on the other end.
+
+Everything it keeps lives in `%APPDATA%\Rekounts` on your disk, and you can
+delete it whenever you like. The full detail, checked against the source, is in
+**[the privacy page](docs/privacy.md)**.
+
+## If something goes wrong
+
+- **Nothing gets typed** → Settings → **Test** your microphone. "Silent" means
+  it's the wrong mic, or muted in Windows.
+- **The hotkey does nothing** → something else is probably using it. Change it
+  in Settings. (It also can't see keystrokes while an *administrator* window is
+  focused — that's a Windows rule, not a bug. Click a normal window.)
+- **Text went nowhere in an admin app** → Windows won't let a normal app type
+  into an elevated one. Your words are still saved in the Hub, ready to copy.
+- **Tagalog is rough** → switch the speech model to `medium` in Settings.
+
+Still stuck? Right-click the tray icon → **Send Feedback…**. It shows you
+exactly what it's about to include, then opens a prefilled GitHub issue or an
+email in your own mail app — already written, and not sent until you send it.
+Your dictations are never part of it.
+
+Your log lives at `%APPDATA%\Rekounts\logs\rekounts.log` (Settings → **Data &
+Privacy** → **Open folder** takes you there). It never contains what you
+dictated.
+
+## Digging deeper
+
+- **[Getting the best accuracy](docs/accuracy.md)** — choosing a speech model,
+  measuring it on your own voice, and what a GPU is worth.
+- **[Every setting](docs/settings.md)** — the full tour, and where your data
+  lives.
+- **[Privacy](docs/privacy.md)** — what's stored, and every moment it touches
+  the network.
+- **[Running on macOS](docs/macos.md)** — what's built, what's unknown, and why
+  there's no Mac download. The friendly version is
+  **[the quickstart](docs/macos-quickstart.md)**.
+- **[Building from source](docs/building.md)** — running it yourself, the tests,
+  and packaging the app.
+- **[Changelog](CHANGELOG.md)** — what changed and when.
+
+## Licence
+
+GPL-3.0 — see [LICENSE](LICENSE). Free software: use it, read it, change it,
+share it. If you distribute a modified version, it stays free too.
+
+The speech models are Whisper, released by OpenAI under the MIT licence and
+converted by SYSTRAN — details and attribution in
+[docs/model-license.md](docs/model-license.md). "Rekounts" and the logo are
+covered separately in [TRADEMARKS.md](TRADEMARKS.md).
+
+Found a security problem? [SECURITY.md](SECURITY.md) has the private reporting
+link. Want to help? [CONTRIBUTING.md](CONTRIBUTING.md).
