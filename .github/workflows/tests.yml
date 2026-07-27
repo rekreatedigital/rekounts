@@ -5,6 +5,11 @@ on:
     branches: [master]
   pull_request:
 
+# The suite needs nothing but the code. Stated explicitly so a workflow
+# added later cannot quietly inherit write access to the repo.
+permissions:
+  contents: read
+
 jobs:
   pytest:
     runs-on: windows-latest
