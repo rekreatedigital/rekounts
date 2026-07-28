@@ -209,17 +209,23 @@ class _StubClipboard:
 
 
 def test_policy_types_short_text_through_the_real_backend(backend):
+    # Reaching the typing path takes BOTH config keys now — keystroke mode
+    # alone pastes, because _KEYSTROKE_SAFE_CHARS is 0.
     clip = _StubClipboard().install(backend)
-    ins = TextInserter(mode="keystroke", restore_delay=0, backend=clip)
+    ins = TextInserter(mode="keystroke", restore_delay=0, backend=clip,
+                       long_text_via_paste=False)
     assert ins.insert("a short one") == InsertResult.TYPED
     assert text_of(backend.sent) == "a short one"
 
 
-def test_policy_diverts_long_text_away_from_keystrokes(backend):
+def test_policy_diverts_text_away_from_keystrokes(backend):
+    # Was "long text": the diversion used to start above 100 characters. It
+    # starts at one character now — typing corrupts text in modern Windows
+    # apps at any length, so nothing is short enough to be worth typing.
     stub = _StubClipboard()
     ins = TextInserter(mode="keystroke", restore_delay=0,
                        backend=stub.install(backend))
-    long_text = "w" * (_KEYSTROKE_SAFE_CHARS + 1)
-    assert ins.insert(long_text) == InsertResult.PASTED
+    text = "w" * (_KEYSTROKE_SAFE_CHARS + 1)
+    assert ins.insert(text) == InsertResult.PASTED
     assert backend.sent == []              # nothing was typed at all
-    assert stub.text == long_text
+    assert stub.text == text

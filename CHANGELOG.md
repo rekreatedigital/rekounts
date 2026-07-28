@@ -7,6 +7,45 @@ The version string lives in one place — `rekounts/__init__.py` — and
 everything else (`pyproject.toml`, the `.exe` file properties) reads it from
 there.
 
+## [Unreleased]
+
+### Fixed: dictations turned into rows of dots in Notepad
+
+Dictate into Windows 11's Notepad and you could get the first word, then a long
+row of identical dots where the rest of your sentence should have been. The
+same dictation landed perfectly everywhere else — the Scratchpad, browsers, AI
+chat boxes — which made it look like Notepad was the problem. It wasn't, quite.
+
+Settings offered a choice of how your text gets inserted: **Paste** or **Type
+keystrokes**. Anyone who picked Type keystrokes was, without being told,
+opting into a way of inserting text that Notepad cannot read. Windows 11
+rebuilt Notepad on newer foundations, and typed-out characters arrive there as
+placeholder dots rather than letters. Long dictations were already being routed
+around it, which is why this only ever bit short ones and looked so random.
+
+There is no length of text that is safe to type into those apps, so the choice
+is gone and every dictation is now inserted the way that works. If you had Type
+keystrokes selected, there is nothing for you to do — you will simply stop
+losing text.
+
+The switch below it, **Paste long dictations**, has gone too. It only ever did
+anything in the mode that no longer exists, so leaving it there would have been
+a switch that could not change what you get.
+
+**What you lose:** those two rows in Settings ▸ Behavior. A small number of
+apps ignore `Ctrl+V` entirely — Windows Terminal, PuTTY, some virtual-machine
+windows — and for those, typing was the only thing that worked. It still is,
+and it still works, but it is now two hand-edited lines in `config.json`
+instead of a toggle, alongside the other advanced knobs. [The settings
+page](docs/settings.md#if-your-app-ignores-ctrlv) walks through it, including
+what typing costs you in return.
+
+If you were relying on Type keystrokes for one of those apps, note that it now
+takes **both** keys — `insertion_mode` **and** `long_text_via_paste`. Setting
+only the first no longer types anything, on purpose: that half-configured state
+is exactly what produced the dots, typing your short dictations while pasting
+your long ones, and failing you in both directions at once.
+
 ## [0.4.2] — 2026-07-25
 
 ### Fixed: Settings now says only what is true for the person reading it

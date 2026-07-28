@@ -26,17 +26,13 @@ dictation.
 - **Audio** — microphone, with **Refresh** and a **Test** button (you want
   "Heard you clearly"); **Sound effects**, the short tone when dictation
   starts and stops; and its **Volume**.
-- **Behavior** — insertion mode: `paste` (default; your clipboard is preserved)
-  or `keystroke` (types the characters; never touches the clipboard); the
-  text cleanup toggles
+- **Behavior** — the text cleanup toggles
   (remove fillers, auto-capitalize, fix punctuation spacing, remove repeated
   words and repeated short phrases — "I'm gonna I'm gonna" → "I'm gonna" — and
   **remove hedge phrases**, which drops "you know", "I mean", "like" and
   "right" only when commas mark them as asides, so "I like it" and "turn
-  right" are never touched); **Paste long dictations**, which routes a long
-  transcript through the clipboard because typing one out arrives mangled;
-  **Catch the first word** (the pre-roll buffer); the maximum recording
-  length; and the phantom-phrase filter.
+  right" are never touched); **Catch the first word** (the pre-roll buffer);
+  the maximum recording length; and the phantom-phrase filter.
 - **System** — launch at login, the on-screen pill, the **Scratchpad**, tray
   notifications, and the automatic update check.
 - **Data & Privacy** — the dictation-history switch, **Clear all**,
@@ -44,8 +40,54 @@ dictation.
   data lives and to the diagnostic log, and **Send feedback…**.
 
 Only a few tuning knobs remain config-file-only — edit
-`%APPDATA%\Rekounts\config.json` and relaunch: `beam_size` (transcription
-beam width) and `preroll_seconds`.
+`%APPDATA%\Rekounts\config.json` and relaunch: `beam_size` (transcription beam
+width), `preroll_seconds`, and the two insertion keys below —
+`insertion_mode` and `long_text_via_paste`.
+
+### How your text gets inserted
+
+Rekounts puts your dictation on the clipboard, presses `Ctrl+V`, and puts your
+old clipboard contents straight back. That is the only way Settings offers, and
+it is the right one for effectively every app.
+
+Settings used to offer **Type keystrokes** as an alternative, which typed the
+characters out one at a time instead of touching the clipboard. It is gone,
+because it quietly destroys text: the characters go out as synthesized key
+events that Windows 11's rebuilt Notepad — and other modern apps built the same
+way — draw as a row of identical dots rather than your words. That is about how
+those apps read input, not about how much you dictated, so there is no
+dictation short enough to be safe. Nothing warns you; the text simply arrives
+wrong.
+
+Alongside it went **Paste long dictations**, which only ever meant anything in
+keystroke mode.
+
+#### If your app ignores Ctrl+V
+
+A handful do — Windows Terminal, PuTTY and some virtual-machine windows are the
+usual suspects. They swallow `Ctrl+V` without complaining, so nothing on our
+side can tell that your dictation went nowhere. Typing is the only thing that
+works there, and you can still ask for it. It takes **both** of these keys in
+`config.json`, then a relaunch:
+
+```json
+"insertion_mode": "keystroke",
+"long_text_via_paste": false
+```
+
+Both, because either one on its own does something you almost certainly do not
+want:
+
+| `insertion_mode` | `long_text_via_paste` | What happens |
+| --- | --- | --- |
+| `"paste"` (default) | anything | Everything is pasted. |
+| `"keystroke"` | `true` (default) | Everything is pasted — same as above. |
+| `"keystroke"` | `false` | Everything is typed out, literally. |
+
+Know what the last row costs you: typing reaches the apps that refuse paste,
+and can mangle your dictation in modern ones like Notepad. It is the right
+answer only if the app you actually dictate into is one of the awkward ones.
+Set it back to `"paste"` (or delete both keys) to return to normal.
 
 ## Where your stuff lives
 

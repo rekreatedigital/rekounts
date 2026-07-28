@@ -91,3 +91,25 @@ def test_corrupt_config_is_backed_up_not_destroyed(tmp_path):
     bak = tmp_path / "config.json.bak"
     assert bak.exists()
     assert "not valid json" in bak.read_text(encoding="utf-8")
+
+
+# --- insertion mode: a hidden knob, not a Settings row ---
+# Settings no longer offers "Insert text by" — typing a dictation out as
+# synthesized keystrokes destroys it in modern WinUI/XAML apps at any length
+# (see tests/test_text_inserter.py). The key stays in the config file for the
+# apps that genuinely ignore Ctrl+V, so both halves of that promise are pinned:
+# everyone gets paste, and a hand-written "keystroke" is still obeyed.
+
+def test_insertion_mode_defaults_to_paste(tmp_path):
+    assert DEFAULTS["insertion_mode"] == "paste"
+    cfg = Config(path=tmp_path / "config.json")
+    assert cfg.get("insertion_mode") == "paste"
+
+
+def test_a_hand_written_keystroke_mode_is_still_honoured(tmp_path):
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"insertion_mode": "keystroke"}), encoding="utf-8")
+    cfg = Config(path=p)
+    assert cfg.get("insertion_mode") == "keystroke"
+    # and it survives the backfill that adds every other default around it
+    assert cfg.get("model") == DEFAULTS["model"]

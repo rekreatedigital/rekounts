@@ -132,6 +132,10 @@ delete it whenever you like. The full detail, checked against the source, is in
   focused — that's a Windows rule, not a bug. Click a normal window.)
 - **Text went nowhere in an admin app** → Windows won't let a normal app type
   into an elevated one. Your words are still saved in the Hub, ready to copy.
+- **Nothing arrives in Windows Terminal, PuTTY or a VM window** → a few apps
+  ignore `Ctrl+V`, which is how Rekounts inserts text. There are two
+  hand-edited settings for them: see
+  **[if your app ignores Ctrl+V](docs/settings.md#if-your-app-ignores-ctrlv)**.
 - **Tagalog is rough** → switch the speech model to `medium` in Settings.
 
 Still stuck? Right-click the tray icon → **Send Feedback…**. It shows you

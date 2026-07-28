@@ -107,11 +107,11 @@ def mic_default_hint(platform=None) -> str:
     return f"System default follows whatever {os_name(platform)} is using."
 
 
-def long_text_hint(platform=None) -> str:
-    return ("Keystroke mode only. A long transcript arrives mangled when it is "
-            "typed out, so a long one is pasted instead and your clipboard is "
-            "put straight back. Turn off if your app ignores "
-            f"{paste_shortcut(platform)}.")
+# long_text_hint() lived here until the "Paste long dictations" row was taken
+# out of Settings. It only ever described keystroke mode, and keystroke mode is
+# a config.json knob now (it corrupts text in WinUI/XAML apps at any length —
+# see rekounts/text_inserter.py). The wording it needed lives in
+# docs/settings.md, where the people who edit config.json will find it.
 
 
 def preroll_hint(platform=None) -> str:

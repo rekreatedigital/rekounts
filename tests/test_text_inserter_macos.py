@@ -278,9 +278,11 @@ def test_held_ptt_modifiers_are_waited_out_before_paste():
 
 
 def test_keystroke_mode_types_through_the_backend():
+    # Both keys: keystroke mode on its own pastes now (_KEYSTROKE_SAFE_CHARS
+    # is 0), so long_text_via_paste=False is what asks for literal typing.
     backend, q, pb = make_backend()
     ins = TextInserter(mode="keystroke", modifier_timeout=0,
-                       backend=backend)
+                       backend=backend, long_text_via_paste=False)
     assert ins.insert("ok") == InsertResult.TYPED
     assert [e.unicode[1] for e in q.posted if e.unicode and e.down] == ["ok"]
 
