@@ -204,8 +204,8 @@ the count above:
 - **Send Feedback…** (tray menu, and Settings → Data & Privacy) shows you a
   short diagnostics block first — app version, Windows version, Python and Qt
   versions, whether you run the installed build, and four settings: model,
-  processing,
-  insertion mode and language. That is the whole list, shown in a window with
+  processing, language, and one line saying how your text gets inserted
+  (whether it is pasted or typed). That is the whole list, shown in a window with
   **Copy** and **Save** and deliberately **no Send button**. From there it can
   open a **prefilled GitHub issue form** in your browser or a **prefilled
   email** in your mail client — both arrive unsent; you read, edit, delete,
@@ -220,13 +220,18 @@ the count above:
 
 ## Your clipboard
 
-In the default **paste** insertion mode the app briefly puts your dictated text
-on the clipboard, presses `Ctrl+V`, and then puts your original clipboard
-contents back — including images, files and rich text, not just plain text. If
-you copied something new in that fraction of a second, the app notices and
-leaves your new clipboard alone rather than overwriting it. Choose the
-**keystroke** insertion mode in Settings if you would rather the clipboard were
-never touched.
+To insert a dictation the app briefly puts your text on the clipboard, presses
+`Ctrl+V`, and then puts your original clipboard contents back — including
+images, files and rich text, not just plain text. If you copied something new
+in that fraction of a second, the app notices and leaves your new clipboard
+alone rather than overwriting it. That borrow-and-return is the only time
+Rekounts touches your clipboard; a dictation it could not deliver is left in
+your History, never parked on the clipboard.
+
+There is a keystroke mode that types the characters instead and never touches
+the clipboard at all, but it is no longer offered in Settings — it garbles text
+in modern Windows apps. It is two hand-edited settings now, and
+[the settings page](settings.md#if-your-app-ignores-ctrlv) explains the trade.
 
 ## The Account page
 

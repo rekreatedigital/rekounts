@@ -30,7 +30,7 @@ contributions are very welcome.
 
 1. Fork and clone the repo.
 2. Double-click `setup.bat` (or follow the manual steps in the
-   [README](README.md#install--from-source-developers)).
+   [README](README.md#getting-it)).
 3. Run the app with `run.bat` and the tests with `pytest` (above).
 
 Nothing else is needed to work on the app. Two extras are **build-time only**,

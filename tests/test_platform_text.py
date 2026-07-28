@@ -30,10 +30,6 @@ MAC = "darwin"
 # rewrite cannot silently drift back.
 PINNED_WINDOWS = {
     "mic": "System default follows whatever Windows is using.",
-    "long_text": (
-        "Keystroke mode only. A long transcript arrives mangled when it is "
-        "typed out, so a long one is pasted instead and your clipboard is put "
-        "straight back. Turn off if your app ignores Ctrl+V."),
     "preroll": (
         "The microphone stays open the whole time, so Windows shows the "
         "mic-in-use indicator continuously — the audio stays in memory and is "
@@ -47,8 +43,6 @@ PINNED_WINDOWS = {
 
 # What each reworded hint used to say, and the reason it stopped saying it.
 RETIRED = {
-    # An internal threshold nobody can act on.
-    "long_text": "~100 characters",
     # The engineering name for the technique; the row title now says what the
     # user gets ("Catch the first word").
     "preroll": "Catches the first syllable.",
@@ -56,11 +50,20 @@ RETIRED = {
 
 HINTS = {
     "mic": pt.mic_default_hint,
-    "long_text": pt.long_text_hint,
     "preroll": pt.preroll_hint,
     "launch": pt.launch_at_login_hint,
     "scratchpad": pt.scratchpad_hint,
 }
+
+
+def test_there_is_no_hint_for_a_row_that_no_longer_exists():
+    """The "Paste long dictations" row is gone, so its wording is too.
+
+    The row only meant anything in keystroke mode, which is not reachable from
+    the UI any more. A hint left behind here would be wording nobody can read,
+    quietly re-pinned by the tests above as if a user still saw it.
+    """
+    assert not hasattr(pt, "long_text_hint")
 
 
 @pytest.mark.parametrize("key", sorted(PINNED_WINDOWS))
@@ -84,12 +87,12 @@ def test_every_hint_has_its_own_mac_wording(key):
 def test_no_mac_hint_says_windows(key):
     text = HINTS[key](MAC)
     assert "Windows" not in text
-    # "Ctrl+V" is the Windows paste, and only appears in the long-text hint.
+    # "Ctrl+V" is the Windows paste. No hint names a paste shortcut any more —
+    # the row that did is gone — so this is now a floor, not a carve-out.
     assert "Ctrl+V" not in text
 
 
 def test_the_mac_hints_say_the_true_thing():
-    assert "Cmd+V" in pt.long_text_hint(MAC)
     assert "macOS" in pt.mic_default_hint(MAC)
     # The mic indicator on macOS 12+ is an orange dot in the menu bar, not
     # Windows' "mic in use" tray icon.

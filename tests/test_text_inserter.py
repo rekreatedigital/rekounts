@@ -15,6 +15,7 @@ import pytest
 from rekounts.text_inserter import (
     InsertResult,
     TextInserter,
+    _KEYSTROKE_SAFE_CHARS,
     _NullBackend,
     _WaitBudget,
 )
@@ -114,10 +115,22 @@ class FakeBackend:
         return self.type_complete
 
 
-def make(mode="paste", **backend_kwargs):
+def make(mode="paste", long_text_via_paste=True, **backend_kwargs):
     be = FakeBackend(**backend_kwargs)
-    ins = TextInserter(mode=mode, restore_delay=0, modifier_timeout=0.2, backend=be)
+    ins = TextInserter(mode=mode, restore_delay=0, modifier_timeout=0.2,
+                       backend=be, long_text_via_paste=long_text_via_paste)
     return ins, be
+
+
+def typing(**backend_kwargs):
+    """An inserter that actually types — the only configuration that still does.
+
+    ``insertion_mode="keystroke"`` on its own no longer reaches the typing
+    path: _KEYSTROKE_SAFE_CHARS is 0, so keystroke mode delivers through the
+    clipboard unless long_text_via_paste is also off. Both keys are hand-edited
+    config now, and this helper is the two of them together.
+    """
+    return make(mode="keystroke", long_text_via_paste=False, **backend_kwargs)
 
 
 # --------------------------------------------------------------------------
@@ -146,7 +159,7 @@ def test_result_is_plain_string():
 
 
 def test_keystroke_mode_returns_typed():
-    ins, be = make(mode="keystroke")
+    ins, be = typing()
     assert ins.insert("hello") == InsertResult.TYPED
     assert be.typed == ["hello"]
     assert be.pastes == 0
@@ -323,23 +336,45 @@ def test_on_notice_silent_on_success():
 
 
 # --------------------------------------------------------------------------
-# Long text in keystroke mode goes via the clipboard
+# Keystroke mode goes via the clipboard — at every length
 #
-# Synthesized keystrokes cannot deliver a long transcript intact: SendInput
-# queues events far ahead of the app consuming them, so anything the user does
-# mid-delivery corrupts the tail and cannot be retracted (measured in
-# tools/injection_harness.py). Long text therefore takes the paste path, which
-# hands the whole string over in one operation.
+# Synthesized keystrokes cannot deliver a dictation intact, and they fail two
+# separate ways:
+#
+#   LONG text — SendInput queues events far ahead of the app consuming them, so
+#   anything the user does mid-delivery corrupts the tail and cannot be
+#   retracted (measured in tools/injection_harness.py, 1351 chars).
+#
+#   SHORT text — KEYEVENTF_UNICODE synthesizes VK_PACKET events, and a
+#   WinUI/XAML app renders those as a placeholder glyph. Reported 2026-07-28: a
+#   48-character dictation arrived in Windows 11's Notepad as the first word
+#   followed by a row of identical dots, one per remaining character.
+#
+# The second one is why _KEYSTROKE_SAFE_CHARS is 0 rather than 100. Length was
+# never the safety property; it just happened to be the axis the first bug fell
+# along. Everything now takes the paste path, which hands the whole string over
+# in one operation.
 # --------------------------------------------------------------------------
-LONG = "word " * 60          # 300 chars, well past _KEYSTROKE_SAFE_CHARS
-SHORT = "just a few words"   # comfortably under it
+LONG = "word " * 60          # 300 chars
+SHORT = "just a few words"   # what used to fall under the old 100-char limit
+# The exact dictation from the bug report, kept verbatim: 48 characters.
+NOTEPAD_DEFECT_TEXT = "Testing if this app works on Notepad and if not."
 
 
-def test_keystroke_mode_types_short_text_literally():
+def test_the_threshold_that_made_short_text_typable_is_gone():
+    assert _KEYSTROKE_SAFE_CHARS == 0
+
+
+def test_keystroke_mode_sends_short_text_via_clipboard():
+    # THE REGRESSION TEST. This is the configuration the reporter was running:
+    # insertion_mode="keystroke" with long_text_via_paste left at its default.
+    # It used to type — and Notepad drew dots. It must paste.
+    assert len(NOTEPAD_DEFECT_TEXT) < 100      # under the OLD threshold
     ins, be = make(mode="keystroke")
-    assert ins.insert(SHORT) == InsertResult.TYPED
-    assert be.typed == [SHORT]
-    assert be.pastes == 0
+    assert ins.insert(NOTEPAD_DEFECT_TEXT) == InsertResult.PASTED
+    assert be.set_text == NOTEPAD_DEFECT_TEXT
+    assert be.pastes == 1
+    assert be.typed == []
 
 
 def test_keystroke_mode_sends_long_text_via_clipboard():
@@ -350,12 +385,43 @@ def test_keystroke_mode_sends_long_text_via_clipboard():
     assert be.set_text == LONG
 
 
-def test_keystroke_long_text_falls_back_to_typing_when_paste_fails():
+def test_keystroke_mode_falls_back_to_typing_when_paste_fails():
     # The reason people choose keystroke mode is an app that refuses Ctrl+V,
     # so the escalation must never strand them.
     ins, be = make(mode="keystroke", fail_set_text=True)
     assert ins.insert(LONG) == InsertResult.TYPED
     assert be.typed == [LONG]
+
+
+def test_short_text_also_falls_back_to_typing_when_paste_fails():
+    ins, be = make(mode="keystroke", fail_set_text=True)
+    assert ins.insert(SHORT) == InsertResult.TYPED
+    assert be.typed == [SHORT]
+
+
+# --------------------------------------------------------------------------
+# The configuration that broke is unreachable now
+#
+# insertion_mode="keystroke" + long_text_via_paste=True used to mean SHORT text
+# typed and LONG text pasted. That failed in both directions at once: the typed
+# half corrupted in modern apps, and the pasted half delivered nothing at all
+# in the paste-refusing app that is the only reason to pick keystroke mode. The
+# two remaining configurations each do exactly one thing.
+# --------------------------------------------------------------------------
+def test_keystroke_with_the_default_switch_pastes_everything():
+    for text in (SHORT, NOTEPAD_DEFECT_TEXT, LONG):
+        ins, be = make(mode="keystroke")
+        assert ins.insert(text) == InsertResult.PASTED, text
+        assert be.typed == [], text
+
+
+def test_turning_the_switch_off_types_everything():
+    for text in (SHORT, NOTEPAD_DEFECT_TEXT, LONG):
+        ins, be = typing()
+        assert ins.insert(text) == InsertResult.TYPED, text
+        assert be.typed == [text]
+        assert be.pastes == 0, text
+        assert be.set_text is None, text
 
 
 def test_keystroke_long_text_can_be_forced_to_type():
@@ -371,12 +437,13 @@ def test_partial_typing_reports_no_target():
     be = FakeBackend()
     be.type_complete = False
     ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
-                       backend=be)
+                       backend=be,
+                       long_text_via_paste=False)
     assert ins.insert(SHORT) == InsertResult.NO_TARGET
 
 
 def test_typing_is_given_a_continue_predicate():
-    ins, be = make(mode="keystroke")
+    ins, be = typing()
     ins.insert(SHORT)
     assert callable(be.should_continue)
 
@@ -413,17 +480,26 @@ def test_a_failed_injection_leaves_the_clipboard_alone():
 
     be.type_unicode = boom
     ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
-                       backend=be)
+                       backend=be,
+                       long_text_via_paste=False)
     assert ins.insert("hello") == InsertResult.FAILED
     assert _clipboard_calls(be) == []
 
 
 def test_an_undelivered_keystroke_dictation_leaves_the_clipboard_alone():
-    be = FakeBackend(no_target=True)
-    ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
-                       backend=be)
-    assert ins.insert(LONG) == InsertResult.NO_TARGET
-    assert _clipboard_calls(be) == []
+    # BOTH keystroke configurations, because they now abort in different
+    # places: the default one bails out of _do_paste before it borrows the
+    # clipboard, and the typing one never goes near it. Testing only the
+    # default would quietly stop covering the typing path — which is exactly
+    # what happened to this test when _KEYSTROKE_SAFE_CHARS became 0.
+    for pastes_instead in (True, False):
+        be = FakeBackend(no_target=True)
+        ins = TextInserter(mode="keystroke", restore_delay=0,
+                           modifier_timeout=0.05, backend=be,
+                           long_text_via_paste=pastes_instead)
+        assert ins.insert(LONG) == InsertResult.NO_TARGET
+        assert _clipboard_calls(be) == [], pastes_instead
+        assert be.typed == [], pastes_instead
 
 
 def test_the_notice_points_at_history_not_the_clipboard():
@@ -476,7 +552,8 @@ def test_modifier_timeout_between_chunks_stops_the_delivery():
     be.chunks = 4
     be.modifiers_stuck = True
     ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
-                       backend=be)
+                       backend=be,
+                       long_text_via_paste=False)
     assert ins.insert(SHORT) == InsertResult.INTERRUPTED
 
 
@@ -486,7 +563,8 @@ def test_an_interrupted_delivery_says_so_without_touching_the_clipboard():
     be.chunks = 4
     be.modifiers_stuck = True
     ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
-                       on_notice=notices.append, backend=be)
+                       on_notice=notices.append, backend=be,
+                       long_text_via_paste=False)
     ins.insert(SHORT)
     assert _clipboard_calls(be) == []
     assert notices and "clipboard" not in notices[0].lower()
@@ -497,7 +575,8 @@ def test_released_modifiers_let_the_delivery_finish():
     be = FakeBackend(modifier_sequence=[True, True, False])
     be.chunks = 4
     ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=1.0,
-                       backend=be)
+                       backend=be,
+                       long_text_via_paste=False)
     assert ins.insert(SHORT) == InsertResult.TYPED
     assert be.gate_calls == 3
 
@@ -507,7 +586,8 @@ def test_a_focus_change_between_chunks_still_reports_no_target():
     be = FakeBackend(foreground_sequence=[100, 100, 999])
     be.chunks = 4
     ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
-                       backend=be)
+                       backend=be,
+                       long_text_via_paste=False)
     assert ins.insert(SHORT) == InsertResult.NO_TARGET
 
 
@@ -517,7 +597,8 @@ def test_guard_still_proceeds_when_modifiers_never_lift():
     be = FakeBackend()
     be.modifiers_stuck = True
     ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
-                       backend=be)
+                       backend=be,
+                       long_text_via_paste=False)
     assert ins.insert(SHORT) == InsertResult.TYPED
 
 

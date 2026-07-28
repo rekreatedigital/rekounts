@@ -445,6 +445,26 @@ def test_router_diverts_to_the_pad_when_it_is_focused():
     assert inserter.calls == []          # the clipboard is never touched
 
 
+def test_router_passes_through_to_a_real_inserter():
+    """The pad is the one surface that WRAPS the inserter instead of calling it.
+
+    Every other test here uses a fake inserter, which would keep passing if the
+    real one changed shape underneath. When insertion mode left Settings the
+    inserter's defaults changed, so pin the actual object: an unfocused pad must
+    still deliver, and deliver by pasting.
+    """
+    from rekounts.text_inserter import InsertResult, TextInserter
+    from tests.test_text_inserter import FakeBackend
+
+    be = FakeBackend()
+    real = TextInserter(restore_delay=0, modifier_timeout=0.05, backend=be)
+    router = ScratchpadRouter(_FakePad(False), real)
+
+    assert router.insert("goes to the app") == InsertResult.PASTED
+    assert be.set_text == "goes to the app"
+    assert be.typed == []
+
+
 def test_the_routed_outcome_counts_as_delivered_in_history():
     """A dictation that landed in the pad is not a failed insertion."""
     from rekounts.controller import _insertion_succeeded

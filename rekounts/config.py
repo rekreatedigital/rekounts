@@ -42,13 +42,29 @@ DEFAULTS = {
     # "turn right" are never touched. On by default for the same reason
     # strip_fillers is: clean text out of the box is the product.
     "strip_discourse_fillers": True,
-    "insertion_mode": "paste",   # or "keystroke"
-    # Keystroke mode only. Synthesized keystrokes provably cannot deliver a long
-    # transcript intact (SendInput queues events that are dispatched against the
-    # live keyboard/focus state - see rekounts/text_inserter.py), so anything
-    # past ~100 characters is handed over via the clipboard, which is then put
-    # back. Turn OFF to always type literally: the escape hatch for apps that
-    # silently ignore Ctrl+V, where a paste cannot be detected as refused.
+    # How a dictation reaches your cursor. NOT in Settings, on purpose: the
+    # only other value, "keystroke", types the text out as synthesized
+    # VK_PACKET events, and modern WinUI/XAML apps (Windows 11's Notepad among
+    # them) render those as a placeholder glyph — a 48-character dictation
+    # arrived as a row of dots. That is a property of the target app's input
+    # stack, not of how much text there is, so no length is safe and the option
+    # could not honestly sit in Settings beside pasting.
+    #
+    # It stays here as a hand-edited escape hatch for the apps that genuinely
+    # ignore Ctrl+V (Windows Terminal, PuTTY, some VM windows), where a paste
+    # fails silently and cannot be detected as refused. Setting it alone is NOT
+    # enough for those apps - see long_text_via_paste directly below.
+    "insertion_mode": "paste",   # or "keystroke" — see above before you set it
+    # Keystroke mode only, and also NOT in Settings: with the mode itself out of
+    # the UI this switch could never have changed anything a user saw.
+    #
+    # Left ON, keystroke mode still delivers through the clipboard, because
+    # synthesized keystrokes cannot deliver a dictation intact - long ones lose
+    # characters to SendInput's queue, short ones come out as dots in modern
+    # Windows apps (see rekounts/text_inserter.py for both measurements).
+    # Turn OFF to type everything literally. That is the real escape hatch for
+    # an app that silently ignores Ctrl+V, and it takes BOTH keys: paste cannot
+    # be detected as refused, so only you can tell us your app refuses it.
     "long_text_via_paste": True,
     "launch_on_startup": False,
     # --- pipeline quality (feat/pipeline-quality) ---------------------------

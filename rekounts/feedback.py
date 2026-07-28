@@ -36,6 +36,12 @@ import sys
 from pathlib import Path
 from urllib.parse import quote
 
+# Safe to import at module level: text_inserter's own top-level imports are
+# stdlib only (the Win32/Quartz layers load lazily inside their backends), so
+# this keeps the "nothing here imports Qt, and nothing here loads a native
+# runtime early" promise above.
+from rekounts.text_inserter import describe_delivery
+
 log = logging.getLogger(__name__)
 
 # The one place the support address is written. The owner sets the final value;
@@ -205,6 +211,31 @@ def _setting(config, key) -> str:
     return "" if value is None else str(value)
 
 
+def _insertion(config) -> str:
+    """How a dictation actually reaches the cursor, as one line.
+
+    Was ``_setting(config, "insertion_mode")`` under the label "Insert text by",
+    which was the name of a Settings row. Two things made that wrong:
+
+      * The row is gone. A diagnostics block that quotes UI a reader cannot find
+        sends them hunting through Settings for something that isn't there.
+      * It named one of the TWO keys that decide this. ``keystroke`` means
+        "pastes" or "types" depending on ``long_text_via_paste``, which are
+        opposite behaviours — and the 2026-07-28 Notepad bug was diagnosed from
+        a report showing only the first half.
+
+    The sentence itself comes from text_inserter, beside the policy it
+    describes, so it cannot drift from what the code does.
+    """
+    try:
+        mode = config.get("insertion_mode")
+        long_text = config.get("long_text_via_paste")
+    except Exception:
+        log.debug("could not read the insertion settings for diagnostics")
+        return ""
+    return "" if mode is None else describe_delivery(mode, long_text)
+
+
 def diagnostic_fields(config=None) -> list[tuple[str, str]]:
     """The (label, value) pairs that make up the block, before scrubbing.
 
@@ -220,7 +251,7 @@ def diagnostic_fields(config=None) -> list[tuple[str, str]]:
         ("Qt", _qt_version()),
         ("Model", _setting(config, "model")),
         ("Processing", _setting(config, "device")),
-        ("Insert text by", _setting(config, "insertion_mode")),
+        ("Text insertion", _insertion(config)),
         ("Language", _setting(config, "language")),
     ]
     return [(label, value) for label, value in fields if value]

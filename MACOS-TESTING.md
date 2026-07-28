@@ -118,46 +118,60 @@ Default hotkey is `ctrl+win` = **Ctrl+Cmd** on the Mac keyboard.
       copy is still there (restore skipped via changeCount).
 - [ ] While holding the Ctrl+Cmd hotkey through the paste: no stray
       Ctrl+Cmd+V side effects (modifier wait).
-- [ ] Dictate ü/é/emoji → they arrive intact (keystroke mode).
+- [ ] Dictate ü/é/emoji → they arrive intact.
 - [ ] Focus a different app during transcription → toast "No text field was
       focused", nothing pasted into the wrong app. KNOWN LIMIT: focus tracking
       is per-APP on macOS (frontmost pid), not per-window — switching windows
       within the same app won't abort.
 
-### 3b. The >100-character keystroke → clipboard escalation  ⬜
+### 3b. Keystroke mode, which is config-file-only now  ⬜
 
-New in v0.4.0 and never exercised on a Mac. In **keystroke** mode, anything
-longer than 100 characters is delivered via the clipboard instead, because
-synthesized keystrokes provably cannot carry a long transcript intact
-(`_KEYSTROKE_SAFE_CHARS` in rekounts/text_inserter.py). The clipboard is
-borrowed and put straight back.
+**This section changed.** It used to be about a >100-character escalation, and
+about two Settings rows. Both rows are gone, and `_KEYSTROKE_SAFE_CHARS` is 0,
+so keystroke mode delivers *everything* through the clipboard unless
+`long_text_via_paste` is also turned off. See rekounts/text_inserter.py for the
+Windows-side measurement that forced this.
 
-macOS is the harder case for the *other* branch: Windows can post a whole chunk
-of characters in one atomic `SendInput`, while Quartz posts events one at a time
-(`_MacBackend.type_unicode`), so literal typing has strictly more exposure here.
+There is no UI for any of it. Quit the app, edit
+`~/Library/Application Support/Rekounts/config.json`, relaunch.
 
-Set **Settings → Behavior → Insert text by = Type keystrokes** for all of these.
+macOS is the harder case for the literal-typing branch: Windows can post a whole
+chunk of characters in one atomic `SendInput`, while Quartz posts events one at a
+time (`_MacBackend.type_unicode`), so typing has strictly more exposure here.
 
-- [ ] **Paste long dictations ON** (default), dictate ~200 words into TextEdit →
-      the whole thing arrives at once, like a paste, not typed letter by letter.
-      Log should show `keystroke mode: N chars is past the safe limit`.
+**Set `"insertion_mode": "keystroke"` for all of these.**
+
+- [ ] `"long_text_via_paste": true` (the default), dictate ~200 words into
+      TextEdit → the whole thing arrives at once, like a paste, not typed letter
+      by letter. Log should show `keystroke mode: delivering N chars via the
+      clipboard`.
+- [ ] **Same settings, a SHORT dictation (a dozen words).** → It must ALSO
+      arrive at once. This is the Windows bug ported to the Mac checklist: short
+      text used to be typed here, and that is what corrupted it on Windows 11.
+      Letter-by-letter appearance means the regression is back.
 - [ ] Same, with an image on the clipboard first → after the dictation, ⌘V still
-      pastes your image. (The escalation borrows the clipboard; this is the
+      pastes your image. (The delivery borrows the clipboard; this is the
       give-it-back path, on a real NSPasteboard.)
-- [ ] Copy some text DURING the transcription pause of an escalated dictation →
-      your copy survives (restore skipped via `changeCount`).
-- [ ] A SHORT dictation (under ~100 chars) in keystroke mode is still typed
-      character by character — you should see it appear progressively.
-- [ ] **Paste long dictations OFF**, dictate ~200 words → it is literally typed.
-      Record honestly: did every character arrive? How long did it take? This is
-      the setting that exists for apps which ignore ⌘V, and on macOS it is the
-      least-protected path in the app.
-- [ ] Dictate a long passage containing emoji and accents (`é ü 😀`) in keystroke
-      mode with the escalation OFF. `_MAC_UNICODE_CHUNK` is 20 **UTF-16 units**,
-      and an emoji counts as two — a chunking bug shows up as a mangled or
-      missing character near a boundary, not as an error.
-- [ ] While an escalated (clipboard) delivery happens, keep holding the hotkey
-      chord → no stray Ctrl+Cmd+V side effect in the target app.
+- [ ] Copy some text DURING the transcription pause → your copy survives
+      (restore skipped via `changeCount`).
+- [ ] Now also set `"long_text_via_paste": false` and relaunch. Dictate ~200
+      words → it is literally typed. Record honestly: did every character
+      arrive? How long did it take? This is the configuration that exists for
+      apps which ignore ⌘V, and it is the least-protected path in the app.
+- [ ] With the escalation still off, dictate a long passage containing emoji and
+      accents (`é ü 😀`). `_MAC_UNICODE_CHUNK` is 20 **UTF-16 units**, and an
+      emoji counts as two — a chunking bug shows up as a mangled or missing
+      character near a boundary, not as an error.
+- [ ] Is there a macOS equivalent of the Windows 11 Notepad failure? With typing
+      forced on, dictate a short sentence into a **SwiftUI or Catalyst** app
+      (Freeform, Shortcuts, System Settings' search field) as well as into
+      TextEdit. Windows' rebuilt-in-a-new-UI-toolkit app was the one that broke;
+      nobody has checked whether macOS has the same class of victim. **Unknown,
+      not "fine" — record what you actually see.**
+- [ ] While a clipboard delivery happens, keep holding the hotkey chord → no
+      stray Ctrl+Cmd+V side effect in the target app.
+- [ ] **Put it back** — restore `"insertion_mode": "paste"` and
+      `"long_text_via_paste": true`, or delete both keys.
 
 ## 4. Overlay pill (the riskiest port item)  ⬜
 
@@ -203,8 +217,11 @@ one of them is a genuine UX hole that this session should confirm exists.
 - [ ] **BLOCKED is unreachable on macOS.** There is no UIPI equivalent, so
       `is_blocked` always returns False and the "Can't type into an admin window"
       wording must never appear. If you ever see it on a Mac, that is a bug.
-- [ ] **INTERRUPTED.** Keystroke mode, escalation off, long-ish text: press and
-      hold ⌘ or Option part-way through the typing → delivery stops and the toast
+- [ ] **INTERRUPTED.** Needs BOTH `"insertion_mode": "keystroke"` and
+      `"long_text_via_paste": false` in config.json (§3b) — with either one
+      missing, the text is pasted and this case cannot be reached at all.
+      Long-ish text: press and hold ⌘ or Option part-way through the typing →
+      delivery stops and the toast
       says "Typing stopped part-way — a key was still held down. Part of it is
       already in the field; the whole transcript is in History." Check that the
       partial text really is in the field (the wording promises it, and a user
@@ -355,7 +372,10 @@ The questions that genuinely need hardware, most-likely-to-fail first:
 4. **§5 silent-denial** — with Accessibility revoked, is the startup toast really
    the only thing telling the user why nothing happens?
 5. **§3b** — does literal keystroke typing of a long passage survive on macOS,
-   where events are posted one at a time?
+   where events are posted one at a time? And the new one: does macOS have its
+   own version of the Windows 11 Notepad failure — a SwiftUI/Catalyst app that
+   renders synthesized characters as placeholder glyphs? On Windows that was
+   the whole reason keystroke mode left the UI. Nobody has looked on a Mac.
 
 An hour is enough for 1–4 in that order: see
 [docs/macos-one-hour.md](docs/macos-one-hour.md).

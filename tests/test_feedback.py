@@ -97,6 +97,58 @@ def test_the_block_names_the_app_the_system_and_the_settings(config):
     assert "keystroke" in block
 
 
+def test_the_block_reports_both_keys_that_decide_insertion(config):
+    """"keystroke" alone is half an answer, and the wrong half to act on.
+
+    Two config keys decide how a dictation is delivered and they produce
+    opposite behaviours. The 2026-07-28 Notepad bug ("my words came out as
+    dots") was diagnosed from a report naming only insertion_mode; a report
+    that says which of the two things actually happens is self-diagnosing.
+    """
+    config.set("insertion_mode", "keystroke")
+    config.set("long_text_via_paste", True)
+    assert "pastes anyway" in feedback.collect(config)
+    assert "long_text_via_paste is on" in feedback.collect(config)
+
+    config.set("long_text_via_paste", False)
+    assert "types literally" in feedback.collect(config)
+
+    config.set("insertion_mode", "paste")
+    block = feedback.collect(config)
+    assert "Text insertion:" in block
+    assert "keystroke" not in block
+
+
+def test_the_parts_of_the_block_we_compose_are_pure_ascii(config):
+    """A diagnostics block is copied into places we do not control.
+
+    Caught during review: the insertion line first shipped with a "→" in it,
+    which is unencodable in cp1252 — the default codepage on the machines this
+    app is built for. The app's own Save writes UTF-8, so the file was fine,
+    but the block's whole purpose is to be pasted into a mail client, a
+    terminal or an issue form, and one field arriving as mojibake in a bug
+    report is a bad trade for a nicer arrow.
+
+    Scoped to the strings WE write. platform.platform() and an opt-in log tail
+    can legitimately contain anything, so asserting on the whole block would be
+    flaky rather than protective.
+    """
+    from rekounts.text_inserter import describe_delivery
+
+    for label, value in feedback.diagnostic_fields(config):
+        label.encode("ascii")            # raises if a label sneaks in non-ASCII
+
+    for mode in ("paste", "keystroke"):
+        for switch in (True, False):
+            describe_delivery(mode, switch).encode("ascii")
+
+
+def test_the_block_does_not_quote_a_settings_row_that_no_longer_exists(config):
+    # "Insert text by" was the label of a Settings row. The row is gone, so the
+    # label would send a reader hunting through Settings for it.
+    assert "Insert text by" not in feedback.collect(config)
+
+
 def test_the_block_works_with_no_config_at_all():
     # The tray can be built without a Config; a feedback report must not need one.
     assert "Rekounts" in feedback.collect(None)

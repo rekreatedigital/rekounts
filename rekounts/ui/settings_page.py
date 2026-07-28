@@ -783,19 +783,26 @@ class SettingsPage(QtWidgets.QWidget):
     def _build_behavior(self):
         sec = Section("Behavior")
 
-        self.insertion = self._combo(
-            [("Paste — fastest", "paste"), ("Type keystrokes", "keystroke")],
-            self.config.get("insertion_mode"),
-            lambda v: self._persist("insertion_mode", v))
-        sec.add(SettingsRow(
-            "Insert text by", self.insertion,
-            "Keystrokes are slower but work in apps that block paste."))
-
-        self.long_text_via_paste = self._switch("long_text_via_paste")
-        sec.add(SettingsRow(
-            "Paste long dictations", self.long_text_via_paste,
-            platform_text.long_text_hint()))
-
+        # Two rows used to open this section and both are gone: "Insert text
+        # by" (insertion_mode) and "Paste long dictations"
+        # (long_text_via_paste).
+        #
+        # The first offered "Type keystrokes" as an equal alternative to
+        # pasting, and typing is not one: synthesized keystrokes are VK_PACKET
+        # events, and modern WinUI/XAML apps (Windows 11's Notepad among them)
+        # render them as a placeholder glyph — a 48-character dictation arrived
+        # as a row of dots. No length is safe there, so the page could not
+        # honestly present it as a choice.
+        #
+        # The second only ever meant anything in keystroke mode. With the mode
+        # itself out of the UI, a switch reading "Paste long dictations" would
+        # sit here doing nothing whatsoever, because everything pastes — the
+        # exact "says something that isn't true for the reader" problem the
+        # 0.4.2 Settings pass was about.
+        #
+        # Both keys keep their defaults and stay in config.json for the apps
+        # that genuinely ignore Ctrl+V; see rekounts/text_inserter.py for the
+        # measurement and docs/settings.md for the user-facing version.
         self.strip_fillers = self._switch("strip_fillers")
         sec.add(SettingsRow("Remove filler words", self.strip_fillers,
                             "Drops “um” and “uh”."))

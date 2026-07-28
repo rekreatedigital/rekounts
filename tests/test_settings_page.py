@@ -87,12 +87,19 @@ def test_hedge_switch_is_wired_to_its_config_key(page, cfg):
     assert cfg.get("strip_discourse_fillers") is False
 
 
-def test_long_text_via_paste_switch_is_wired_to_its_config_key(page, cfg):
-    # The documented escape hatch for apps that silently ignore Ctrl+V — a
-    # refused paste is undetectable, so the user needs a way to force typing.
-    assert page.long_text_via_paste.isChecked() is True   # app default: on
-    page.long_text_via_paste.setChecked(False)
-    assert cfg.get("long_text_via_paste") is False
+def test_there_is_no_long_text_via_paste_switch(page, cfg):
+    """It went out with "Insert text by", and had to.
+
+    The switch only ever meant anything in keystroke mode. With the mode itself
+    gone from the page, a row reading "Paste long dictations" would sit in
+    Behavior doing precisely nothing — everything pastes — which is the same
+    "says something untrue to the person reading it" failure the 0.4.2 Settings
+    pass was about. The key survives at its default for the config.json escape
+    hatch; see tests/test_text_inserter.py for what it now does there.
+    """
+    assert not hasattr(page, "long_text_via_paste")
+    assert "Paste long dictations" not in _row_titles(page)
+    assert cfg.get("long_text_via_paste") is True
 
 
 def test_burst_of_changes_coalesces_into_one_apply(page):
@@ -310,10 +317,23 @@ def test_hotkey_changed_signal_only_fires_on_a_real_change(page):
 def test_dropdowns_persist_values_not_labels(page, cfg):
     page.model.setCurrentIndex(page.model.findData("medium"))
     page.language.setCurrentIndex(page.language.findData("tl"))
-    page.insertion.setCurrentIndex(page.insertion.findData("keystroke"))
     assert cfg.get("model") == "medium"
     assert cfg.get("language") == "tl"
-    assert cfg.get("insertion_mode") == "keystroke"
+
+
+# ------------------------------------------- insertion mode is not a choice
+# Typing a dictation out as synthesized keystrokes destroys it in modern
+# WinUI/XAML apps — Windows 11's Notepad rendered a 48-character dictation as
+# a row of dots (see tests/test_text_inserter.py). No length is safe there, so
+# the page must not offer typing as if it were an equal option. The mode still
+# exists for apps that genuinely ignore Ctrl+V; it is reached by hand-editing
+# config.json, like beam_size and preroll_seconds.
+def test_settings_offers_no_insertion_mode_control(page):
+    assert not hasattr(page, "insertion")
+    assert "Insert text by" not in _row_titles(page)
+    for box in page.findChildren(QtWidgets.QComboBox):
+        values = {box.itemData(i) for i in range(box.count())}
+        assert "keystroke" not in values
 
 
 def test_model_dropdown_offers_exactly_the_published_models(page):
@@ -700,7 +720,11 @@ def test_the_load_bearing_sentences_are_still_there(page):
     assert "never your transcripts" in text           # the diagnostic log
     assert "Rekounts sends nothing itself" in text    # feedback
     assert "“I like it” is never touched" in text     # hedge-phrase safety
-    assert "Turn off if your app ignores" in text     # the paste escape hatch
+    # "Turn off if your app ignores Ctrl+V" was on this list until the "Paste
+    # long dictations" row was removed. The escape hatch it described is real
+    # and still works, but it is two hand-edited config keys now, so its
+    # sentence lives in docs/settings.md instead of on a switch that could not
+    # have changed anything.
 
 
 def test_opening_the_log_folder_creates_it_if_logging_never_could(page,

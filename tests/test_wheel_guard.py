@@ -39,7 +39,6 @@ CONTROLS = (
     ("device", "device"),
     ("mic", "microphone"),
     ("sound_volume", "sound_volume"),
-    ("insertion", "insertion_mode"),
     ("max_minutes", "max_recording_seconds"),
 )
 
@@ -96,7 +95,7 @@ def arm(page, control, delta):
 
     A dropdown already sitting on its first entry cannot scroll up, so testing
     it there would prove nothing and quietly pass whether or not the bug exists.
-    Defaults put device, microphone and insertion mode on entry 0.
+    Defaults put device and microphone on entry 0.
     """
     if isinstance(control, QtWidgets.QComboBox):
         last = control.count() - 1

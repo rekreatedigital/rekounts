@@ -70,6 +70,41 @@ to dictate."** (First launch is slower while the speech model loads.)
 - [ ] Click into a different window mid-dictation → text is not dumped into the
       wrong app; the entry is still saved in the Hub.
 
+## Text insertion in Windows 11 Notepad
+
+**This section cannot be replaced by the test suite.** The unit tests drive a
+fake backend: they prove which code path was chosen, and nothing whatsoever
+about whether real characters arrive intact in a real app. The bug this section
+exists for was invisible to a green suite.
+
+Use the **Windows 11 Notepad** — the rebuilt one with tabs and a formatting
+toolbar (Settings → About shows an `11.x` version). An older build will pass
+these whether or not the bug is present, because the defect is in the new one's
+input pipeline.
+
+- [ ] **1. Short dictation, default settings.** Dictate a sentence of well under
+      100 characters into Notepad.
+      → The **full sentence arrives, byte-exact**.
+      The old failure: the first word landed correctly and every remaining
+      character rendered as an identical dot.
+- [ ] **2. The configuration that broke.** Quit the app. In
+      `%APPDATA%\Rekounts\config.json` set `"insertion_mode": "keystroke"` and
+      leave `"long_text_via_paste": true`. Relaunch. Dictate the same short
+      sentence into Notepad.
+      → Still **byte-exact** — this configuration pastes now, and that is the
+      whole fix. Dots here mean the regression is back.
+- [ ] **3. Literal typing still works where it has to.** Also set
+      `"long_text_via_paste": false` and relaunch. Dictate a short sentence into
+      an app that ignores Ctrl+V — **Windows Terminal** is the easy one.
+      → The text is **typed** into the terminal. (Both keys are required; this
+      is the documented escape hatch and it must not rot.)
+- [ ] **4. What that costs.** With those two keys still set, dictate into
+      Notepad.
+      → Expect **dots or mangled text**. That is the trade the user opted into
+      by hand, and seeing it here is what keeps the docs honest.
+- [ ] **Put it back** — restore `"insertion_mode": "paste"` and
+      `"long_text_via_paste": true` (or delete both keys) before moving on.
+
 ## Settings — instant apply, no restart
 
 Tray → **Settings…** opens the Hub's **Settings page** (there is no separate
@@ -94,8 +129,10 @@ applies on its own within a moment. Throughout this section the app must
       hotkey is kept, nothing broken is saved.
 - [ ] **Text cleanup** toggles: turn off "Remove filler words", dictate
       "um hello" → the "um" survives. Turn it back on.
-- [ ] **Insert text by** = keystrokes, dictate → text is typed
-      character-by-character and your clipboard is untouched.
+- [ ] There is **no "Insert text by" row and no "Paste long dictations" row**
+      in **Behavior** at all — they were removed, not disabled. Insertion is
+      config-file-only now; the cases that exercise it are in the
+      "Text insertion in Windows 11 Notepad" section above.
 - [ ] **Processing**: in the INSTALLED app (and on any Mac) there is no
       Processing row in **General** at all, and nothing anywhere in Settings
       mentions CUDA — that build has no GPU stack in it, so the choice could

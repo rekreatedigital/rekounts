@@ -62,12 +62,70 @@ defect, not the call granularity.
 
 A clipboard paste has no such gap: the target pulls the entire string in one
 operation, so it is all-or-nothing by construction. The same abuse that
-destroyed most of the message leaves a pasted transcript byte-exact. Hence
-:data:`_KEYSTROKE_SAFE_CHARS`: short text (brief phrases) is still typed
-literally, and anything longer is handed over via the clipboard, falling back
-to typing only if the clipboard/paste calls themselves raise. Users whose app
-ignores Ctrl+V can turn the escalation off entirely (``long_text_via_paste`` /
-the "Paste long dictations" setting).
+destroyed most of the message leaves a pasted transcript byte-exact. So in
+keystroke mode the text is handed over via the clipboard, falling back to
+typing only if the clipboard/paste calls themselves raise. Users whose app
+ignores Ctrl+V can turn the escalation off entirely (``long_text_via_paste``,
+now a config.json key — see below).
+
+Short text is NOT safe to type either — the mode is no longer offered
+-------------------------------------------------------------------
+:data:`_KEYSTROKE_SAFE_CHARS` was 100, justified by an argument about exposure
+time: below the threshold, typing is committed in a few tens of milliseconds,
+so there is barely any window for the user to hold a modifier or change focus.
+That argument is WRONG, and a 2026-07-28 bug report disproved it.
+
+A 48-character dictation — well under the threshold, therefore typed — arrived
+in Windows 11's Notepad as the first word followed by a run of identical dots,
+one per remaining character. The same text pasted into the same app is perfect,
+and so is every other app in the report (the Scratchpad, browsers, AI chat
+fields).
+
+The mechanism is the target app's input stack, not elapsed time.
+``KEYEVENTF_UNICODE`` does not deliver a character; it synthesizes a VK_PACKET
+(0xE7) key event carrying the code unit. Classic Win32 controls translate
+VK_PACKET into WM_CHAR through TranslateMessage and get the character. Windows
+11's Notepad was rebuilt as a WinUI/XAML app, and that input pipeline mishandles
+fast VK_PACKET bursts: unresolved packets are drawn as a placeholder glyph. It
+happens to be the only WinUI-rebuilt text app in that report, so it is the one
+that was noticed — every modern XAML app is exposed the same way.
+
+Nothing about this scales with length. There is no character count at which
+VK_PACKET becomes safe in a XAML app, so no threshold can be tuned to fix it.
+That is why "Insert text by" is no longer a row in Settings: offering typing
+beside pasting presented a broken option as an equal choice, and a user who
+picked it got silently corrupted dictations in an app that gave no error.
+
+Two settings, two coherent behaviours (the middle one is gone)
+--------------------------------------------------------------
+Hiding the UI toggle was not the whole fix, because the broken configuration
+was still reachable by hand. ``insertion_mode="keystroke"`` with
+``long_text_via_paste`` at its default of True used to mean: short text TYPED
+(corrupts in Notepad, the bug above) and long text PASTED (delivers nothing in
+the paste-refusing app that is the only reason to choose keystroke mode). It
+failed in both directions at once and served nobody.
+
+:data:`_KEYSTROKE_SAFE_CHARS` is therefore 0, which collapses that middle case
+into the safe one. What remains:
+
+  ==================== ==================== ============================
+  insertion_mode       long_text_via_paste  behaviour
+  ==================== ==================== ============================
+  ``"paste"``          (not consulted)      everything via the clipboard
+  ``"keystroke"``      True (default)       everything via the clipboard
+  ``"keystroke"``      False                everything typed literally
+  ==================== ==================== ============================
+
+So a user in a paste-refusing app (Windows Terminal, PuTTY, some VM windows)
+sets BOTH keys. That is one more line of config than before, and it is the
+line that actually describes what they want: type it out, all of it, and
+accept what typing costs. The keystroke path is deliberately still here and
+still tested — it is the only answer when a paste fails silently and
+undetectably (see below).
+
+Both keys are config-file-only now, like ``beam_size`` and ``preroll_seconds``
+— reachable by someone who has read what they are trading away, not offered to
+someone browsing Settings.
 
 An undelivered dictation goes to History, not the clipboard
 -----------------------------------------------------------
@@ -95,7 +153,8 @@ sound signal for the latter, and none of the candidates survives scrutiny:
     where paste refusal actually happens.
 
 We therefore do not guess. Keystroke mode exists for paste-refusing apps, and
-``long_text_via_paste=False`` keeps it literal for long dictations too.
+``long_text_via_paste=False`` is what makes it literal — both are set by hand,
+because only the user knows their app swallows Ctrl+V without complaining.
 
 "Is a text field focused?" — decision & limits
 ----------------------------------------------
@@ -189,6 +248,41 @@ def undelivered_message(outcome) -> str:
     """
     key = str(getattr(outcome, "value", outcome)).strip().lower()
     return _UNDELIVERED_MESSAGES.get(key, _UNDELIVERED_FALLBACK)
+
+
+def describe_delivery(mode, long_text_via_paste=True) -> str:
+    """One line answering "how does a dictation actually reach the cursor?".
+
+    For the diagnostics block in a feedback report. It lives HERE, next to the
+    policy in :meth:`TextInserter._do_keystroke`, for the same reason
+    :func:`undelivered_message` does: the last time this module's behaviour was
+    described somewhere else, the two drifted and users were shown the wrong
+    thing for months.
+
+    It also has to read BOTH keys. The 2026-07-28 Notepad bug was diagnosed
+    from a report that named only ``insertion_mode``, and that is genuinely
+    half the answer — ``keystroke`` means "pastes" or "types" depending on
+    ``long_text_via_paste``, and those are opposite behaviours. A maintainer
+    reading "types literally" next to "my text came out as dots" has the whole
+    diagnosis in one line.
+
+    Argument coercion deliberately mirrors ``__main__._build_inserter`` (plain
+    truthiness on the switch), so this describes what the app WOULD do with
+    these values, including for a hand-edited config that put something odd in
+    the file.
+
+    ASCII only, deliberately — see the test that pins it. This sentence's whole
+    job is to be copied by a non-technical user into somewhere we do not
+    control: a mail client, a terminal, an issue form. The app's own Save
+    writes UTF-8, but nothing downstream of the clipboard promises to, and the
+    rest of the block is plain ASCII. A prettier arrow is not worth being the
+    one field that can arrive as mojibake in a bug report.
+    """
+    if str(mode).strip().lower() != "keystroke":
+        return "paste"
+    if long_text_via_paste:
+        return "keystroke, but pastes anyway (long_text_via_paste is on)"
+    return "keystroke - types literally"
 
 
 # ---------------------------------------------------------------------------
@@ -538,11 +632,43 @@ _WIN_ATOMIC_CHUNK_CHARS = 48
 # defect, not the call granularity.
 #
 # A clipboard paste has no such gap: the app pulls the whole string in one
-# operation, so it is all-or-nothing by construction. Short text (brief phrases)
-# still goes out as real keystrokes,
-# where the exposure is a few tens of milliseconds and pasting would clobber
-# the clipboard for no benefit.
-_KEYSTROKE_SAFE_CHARS = 100
+# operation, so it is all-or-nothing by construction.
+#
+# This is ZERO, and the number is the fix, not a tuning knob.
+#
+# It was 100 until 2026-07-28, on the theory that short text is safe to type
+# because the exposure window is only tens of milliseconds. That theory was
+# wrong. A 48-character dictation — comfortably under the old threshold, so it
+# was typed — arrived in Windows 11's Notepad as the first word followed by a
+# run of identical dots. Typing is unsafe there at ANY length, because the
+# failure is in how a WinUI/XAML app resolves the VK_PACKET events
+# KEYEVENTF_UNICODE synthesizes, and that has nothing to do with how much text
+# there is (see the module docstring).
+#
+# Any non-zero value re-creates the configuration that broke: keystroke mode
+# with long_text_via_paste on meant SHORT text typed (corrupts in modern apps)
+# and LONG text pasted (useless to the paste-refusing app that is the entire
+# reason for choosing keystroke mode). It failed in both directions at once.
+# At zero, the two remaining configurations each do one coherent thing:
+#
+#   long_text_via_paste=True  (default) -> everything is pasted
+#   long_text_via_paste=False           -> everything is typed, literally
+#
+# NOT SHIPPED, and why: pacing the keystrokes instead (key_delay, which
+# _type_paced already implements and nothing sets) is the other candidate fix,
+# and it may well work — but the delay would have to be measured against real
+# Windows 11 Notepad, and a value picked by feel is exactly the kind of
+# reasoning that produced the 100 above. If someone measures one that comes out
+# byte-exact at or under ~5 ms/char, it belongs here with the machine it was
+# measured on; past that it is half a second of visible typing for a 100-char
+# dictation and pasting is simply the better answer.
+#
+# WHERE NOT TO MEASURE IT: tools/injection_harness.py. Its receiver is a
+# classic Win32 EDIT control, which resolves VK_PACKET correctly at any speed,
+# so it reports a perfect run for text Notepad would turn into dots. It is the
+# right tool for the held-modifier/focus-change defect and the wrong one for
+# this. Use real Notepad; docs/manual-smoke-test.md has the procedure.
+_KEYSTROKE_SAFE_CHARS = 0
 
 
 class _Win32Backend:
@@ -952,15 +1078,23 @@ class TextInserter:
     Parameters
     ----------
     mode:
-        ``"paste"`` (clipboard, default) or ``"keystroke"`` (synthesized typing).
+        ``"paste"`` (clipboard, default) or ``"keystroke"`` (synthesized
+        typing). Keystroke mode is not offered in Settings — it corrupts text
+        in WinUI/XAML apps at any length (see the module docstring) — and is
+        reached only by setting ``insertion_mode`` in config.json.
     restore_delay:
         Seconds to wait after Ctrl+V before restoring the clipboard. Raise this for
         heavy apps that consume the clipboard slowly. Restore is additionally
         gated on the clipboard sequence number so a slow paste never causes us to
         clobber newer content the user copied in the meantime.
     key_delay:
-        Inter-key delay (seconds) for the keystroke path. Some apps drop very fast
-        synthesized input; a small value (e.g. 0.003) makes typing more reliable.
+        Inter-key delay (seconds) for the keystroke path, routing it through
+        :meth:`_type_paced`. Some apps drop very fast synthesized input; a
+        small value (e.g. 0.003) makes typing more reliable. Still 0 by
+        default and nothing in the app sets it: pacing is a plausible fix for
+        the Notepad corruption, but shipping a delay picked by feel rather than
+        measured against the real app is what produced the wrong threshold in
+        the first place. See :data:`_KEYSTROKE_SAFE_CHARS`.
     modifier_timeout:
         Max seconds to wait for physical modifier keys to be released before
         sending the paste/typing. Prevents a held push-to-talk chord from turning
@@ -971,13 +1105,14 @@ class TextInserter:
         returned :class:`InsertResult` is the primary signal; this callback is a
         convenience so notices work before the history layer is wired.
     long_text_via_paste:
-        In ``"keystroke"`` mode, deliver text longer than
-        ``_KEYSTROKE_SAFE_CHARS`` through the clipboard instead, because
-        synthesized keystrokes cannot deliver a long transcript intact. Set
+        In ``"keystroke"`` mode, deliver through the clipboard instead of
+        typing, because synthesized keystrokes cannot deliver a dictation
+        intact (``_KEYSTROKE_SAFE_CHARS`` is 0, so this covers all of it). Set
         False to force literal keystrokes at the documented cost. Backed by the
-        config key of the same name (Settings ▸ Behavior ▸ "Use paste for long
-        dictations") so users whose app ignores Ctrl+V have a real escape
-        hatch.
+        config key of the same name — no longer a Settings row, because with
+        the mode itself out of the UI it could never have changed anything a
+        user saw. The real escape hatch for an app that ignores Ctrl+V is both
+        keys set by hand; see the module docstring's table.
     backend:
         Injectable platform backend (for tests). Defaults to the platform backend.
     """
@@ -1021,6 +1156,24 @@ class TextInserter:
         Deliberately two positional parameters and no required keyword: callers
         wrap this object (the scratchpad router delegates with a bare
         ``insert(text)``), and a required keyword here would break them.
+
+        KNOWN TENSION, left as it was on purpose (2026-07-28). The default paste
+        path below falls back to typing when the clipboard itself raises — a
+        locked clipboard, a refused SendInput. That fallback predates the
+        Notepad finding, and it now sits slightly against it: in a WinUI/XAML
+        app the rescue attempt is what produces the dots, silently, on the
+        DEFAULT path.
+
+        It was not changed here because the trade genuinely cuts both ways. In
+        the overwhelming majority of targets (classic Win32 controls, browsers,
+        Electron) typing works and the fallback is the difference between the
+        user getting their dictation and getting nothing. The alternative —
+        returning FAILED and pointing at History — is more honest in Notepad
+        and worse everywhere else. Deciding that is a product call about the
+        default delivery path, not a bug fix, so it is written down here rather
+        than made quietly. The path is rare: backup/restore already swallow
+        their own errors, so only set_clipboard_text or send_paste can trigger
+        it.
         """
         if not text:
             return InsertResult.SKIPPED
@@ -1093,26 +1246,29 @@ class TextInserter:
     def _do_keystroke(self, text, expected):
         """Keystroke mode, but not at the cost of delivering a broken message.
 
-        Long text goes out via the clipboard because keystroke synthesis
-        provably cannot deliver it intact (see ``_KEYSTROKE_SAFE_CHARS``). The
-        user's choice of keystroke mode is still honoured wherever it can be
-        honoured safely — short text — and if the clipboard or SendInput calls
-        RAISE we fall straight back to typing.
+        With ``long_text_via_paste`` on — the default — this delivers via the
+        clipboard, because :data:`_KEYSTROKE_SAFE_CHARS` is 0: synthesized
+        keystrokes cannot be trusted to deliver a dictation intact at any
+        length (long ones lose characters to the SendInput producer/consumer
+        gap, short ones come out as dots in WinUI/XAML apps). If the clipboard
+        or SendInput calls RAISE we fall straight back to typing.
 
-        Note the limit honestly: an app that silently ignores Ctrl+V raises
-        nothing, and there is no way to detect it (see the module docstring), so
-        the fallback does not cover that case. Users in that situation should
-        turn ``long_text_via_paste`` off; the setting exists for them.
+        Turning ``long_text_via_paste`` off is what actually asks for literal
+        typing, and it now means literal typing for everything rather than only
+        below a threshold. That is the setting for an app which silently
+        ignores Ctrl+V: such an app raises nothing and cannot be detected (see
+        the module docstring), so the fallback above will never rescue it and
+        the user has to say up front that pasting is not an option for them.
         """
         if self.long_text_via_paste and len(text) > _KEYSTROKE_SAFE_CHARS:
-            log.info("keystroke mode: %d chars is past the safe limit (%d), "
-                     "delivering via the clipboard instead; set "
-                     "long_text_via_paste=False to force literal typing",
-                     len(text), _KEYSTROKE_SAFE_CHARS)
+            log.info("keystroke mode: delivering %d chars via the clipboard, "
+                     "because synthesized typing corrupts text in modern "
+                     "Windows apps; set long_text_via_paste=False to force "
+                     "literal typing", len(text))
             try:
                 return self._do_paste(text, expected)
             except Exception as e:
-                log.warning("clipboard delivery of a long dictation failed (%s); "
+                log.warning("clipboard delivery of a dictation failed (%s); "
                             "falling back to synthesized keystrokes", e)
         return self._do_type(text, expected)
 
