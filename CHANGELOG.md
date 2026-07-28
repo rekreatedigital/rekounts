@@ -7,7 +7,7 @@ The version string lives in one place — `rekounts/__init__.py` — and
 everything else (`pyproject.toml`, the `.exe` file properties) reads it from
 there.
 
-## [Unreleased]
+## [0.4.3] — 2026-07-28
 
 ### Fixed: dictations turned into rows of dots in Notepad
 
