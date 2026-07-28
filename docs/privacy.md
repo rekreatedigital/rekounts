@@ -204,8 +204,8 @@ the count above:
 - **Send Feedback…** (tray menu, and Settings → Data & Privacy) shows you a
   short diagnostics block first — app version, Windows version, Python and Qt
   versions, whether you run the installed build, and four settings: model,
-  processing,
-  insertion mode and language. That is the whole list, shown in a window with
+  processing, language, and one line saying how your text gets inserted
+  (whether it is pasted or typed). That is the whole list, shown in a window with
   **Copy** and **Save** and deliberately **no Send button**. From there it can
   open a **prefilled GitHub issue form** in your browser or a **prefilled
   email** in your mail client — both arrive unsent; you read, edit, delete,

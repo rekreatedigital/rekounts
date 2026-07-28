@@ -250,6 +250,41 @@ def undelivered_message(outcome) -> str:
     return _UNDELIVERED_MESSAGES.get(key, _UNDELIVERED_FALLBACK)
 
 
+def describe_delivery(mode, long_text_via_paste=True) -> str:
+    """One line answering "how does a dictation actually reach the cursor?".
+
+    For the diagnostics block in a feedback report. It lives HERE, next to the
+    policy in :meth:`TextInserter._do_keystroke`, for the same reason
+    :func:`undelivered_message` does: the last time this module's behaviour was
+    described somewhere else, the two drifted and users were shown the wrong
+    thing for months.
+
+    It also has to read BOTH keys. The 2026-07-28 Notepad bug was diagnosed
+    from a report that named only ``insertion_mode``, and that is genuinely
+    half the answer — ``keystroke`` means "pastes" or "types" depending on
+    ``long_text_via_paste``, and those are opposite behaviours. A maintainer
+    reading "types literally" next to "my text came out as dots" has the whole
+    diagnosis in one line.
+
+    Argument coercion deliberately mirrors ``__main__._build_inserter`` (plain
+    truthiness on the switch), so this describes what the app WOULD do with
+    these values, including for a hand-edited config that put something odd in
+    the file.
+
+    ASCII only, deliberately — see the test that pins it. This sentence's whole
+    job is to be copied by a non-technical user into somewhere we do not
+    control: a mail client, a terminal, an issue form. The app's own Save
+    writes UTF-8, but nothing downstream of the clipboard promises to, and the
+    rest of the block is plain ASCII. A prettier arrow is not worth being the
+    one field that can arrive as mojibake in a bug report.
+    """
+    if str(mode).strip().lower() != "keystroke":
+        return "paste"
+    if long_text_via_paste:
+        return "keystroke, but pastes anyway (long_text_via_paste is on)"
+    return "keystroke - types literally"
+
+
 # ---------------------------------------------------------------------------
 # Windows constants (kept local so the module has no hard pywin32 import at top)
 # ---------------------------------------------------------------------------
@@ -627,6 +662,12 @@ _WIN_ATOMIC_CHUNK_CHARS = 48
 # byte-exact at or under ~5 ms/char, it belongs here with the machine it was
 # measured on; past that it is half a second of visible typing for a 100-char
 # dictation and pasting is simply the better answer.
+#
+# WHERE NOT TO MEASURE IT: tools/injection_harness.py. Its receiver is a
+# classic Win32 EDIT control, which resolves VK_PACKET correctly at any speed,
+# so it reports a perfect run for text Notepad would turn into dots. It is the
+# right tool for the held-modifier/focus-change defect and the wrong one for
+# this. Use real Notepad; docs/manual-smoke-test.md has the procedure.
 _KEYSTROKE_SAFE_CHARS = 0
 
 
@@ -1115,6 +1156,24 @@ class TextInserter:
         Deliberately two positional parameters and no required keyword: callers
         wrap this object (the scratchpad router delegates with a bare
         ``insert(text)``), and a required keyword here would break them.
+
+        KNOWN TENSION, left as it was on purpose (2026-07-28). The default paste
+        path below falls back to typing when the clipboard itself raises — a
+        locked clipboard, a refused SendInput. That fallback predates the
+        Notepad finding, and it now sits slightly against it: in a WinUI/XAML
+        app the rescue attempt is what produces the dots, silently, on the
+        DEFAULT path.
+
+        It was not changed here because the trade genuinely cuts both ways. In
+        the overwhelming majority of targets (classic Win32 controls, browsers,
+        Electron) typing works and the fallback is the difference between the
+        user getting their dictation and getting nothing. The alternative —
+        returning FAILED and pointing at History — is more honest in Notepad
+        and worse everywhere else. Deciding that is a product call about the
+        default delivery path, not a bug fix, so it is written down here rather
+        than made quietly. The path is rare: backup/restore already swallow
+        their own errors, so only set_clipboard_text or send_paste can trigger
+        it.
         """
         if not text:
             return InsertResult.SKIPPED

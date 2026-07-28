@@ -57,7 +57,7 @@ HINTS = {
 
 
 def test_there_is_no_hint_for_a_row_that_no_longer_exists():
-    """"Paste long dictations" is gone from Settings, so its wording is too.
+    """The "Paste long dictations" row is gone, so its wording is too.
 
     The row only meant anything in keystroke mode, which is not reachable from
     the UI any more. A hint left behind here would be wording nobody can read,

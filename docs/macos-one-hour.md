@@ -187,9 +187,11 @@ Small, fast, and each one turns an inference into a fact:
       sentence each. Different text systems, all common targets.
 - [ ] Copy an image (⇧⌘4 to the clipboard), dictate, then ⌘V manually → your
       image is still there. Proves the real NSPasteboard backup/restore.
-- [ ] Settings → Behavior → **Insert text by: Type keystrokes**, dictate ~200
-      words → it should arrive *all at once* (the >100-char clipboard escalation),
-      not letter by letter.
+- [ ] Set `"insertion_mode": "keystroke"` in config.json and relaunch (there is
+      no Settings row for this any more), then dictate ~200 words → it should
+      arrive *all at once*, not letter by letter. A short sentence must do the
+      same. Put the key back to `"paste"` afterwards. Full version in
+      [MACOS-TESTING.md](../MACOS-TESTING.md) §3b.
 - [ ] Dictate `é ü 😀` → they arrive intact.
 - [ ] **Launch at login** on → check
       `~/Library/LaunchAgents/com.rekreatedigital.rekounts.plist` exists; off →

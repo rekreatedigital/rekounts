@@ -461,3 +461,41 @@ def test_inserter_honours_the_configured_insertion_mode():
                                       "long_text_via_paste": True})
     assert built.mode == "paste"
     assert built.long_text_via_paste is True
+
+
+# --------------------------------------------------------------------------
+# The diagnostics sentence must match what the app really does
+#
+# A feedback report now says "pastes anyway" or "types literally" instead of
+# quoting a raw config value. That is only worth anything if it is TRUE. This
+# builds the real inserter from each config, runs a real insert() against a
+# fake backend, and checks the sentence against the observed outcome — so the
+# description cannot drift away from the policy the way this codebase's
+# undelivered-dictation wording once did.
+# --------------------------------------------------------------------------
+def test_the_diagnostics_sentence_matches_the_real_delivery():
+    from rekounts.text_inserter import InsertResult, describe_delivery
+    from tests.test_text_inserter import FakeBackend
+
+    cases = [
+        ({"insertion_mode": "paste", "long_text_via_paste": True},
+         InsertResult.PASTED),
+        ({"insertion_mode": "paste", "long_text_via_paste": False},
+         InsertResult.PASTED),
+        ({"insertion_mode": "keystroke", "long_text_via_paste": True},
+         InsertResult.PASTED),
+        ({"insertion_mode": "keystroke", "long_text_via_paste": False},
+         InsertResult.TYPED),
+    ]
+    for cfg, expected in cases:
+        built = app_main._build_inserter(cfg)
+        built.backend = FakeBackend()
+        built.restore_delay = 0
+        built.modifier_timeout = 0.05
+        outcome = built.insert("a short sentence, the length that broke")
+        assert outcome == expected, cfg
+
+        sentence = describe_delivery(cfg["insertion_mode"],
+                                     cfg["long_text_via_paste"])
+        says_typed = "types literally" in sentence
+        assert says_typed is (outcome == InsertResult.TYPED), (cfg, sentence)

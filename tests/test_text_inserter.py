@@ -487,11 +487,19 @@ def test_a_failed_injection_leaves_the_clipboard_alone():
 
 
 def test_an_undelivered_keystroke_dictation_leaves_the_clipboard_alone():
-    be = FakeBackend(no_target=True)
-    ins = TextInserter(mode="keystroke", restore_delay=0, modifier_timeout=0.05,
-                       backend=be)
-    assert ins.insert(LONG) == InsertResult.NO_TARGET
-    assert _clipboard_calls(be) == []
+    # BOTH keystroke configurations, because they now abort in different
+    # places: the default one bails out of _do_paste before it borrows the
+    # clipboard, and the typing one never goes near it. Testing only the
+    # default would quietly stop covering the typing path — which is exactly
+    # what happened to this test when _KEYSTROKE_SAFE_CHARS became 0.
+    for pastes_instead in (True, False):
+        be = FakeBackend(no_target=True)
+        ins = TextInserter(mode="keystroke", restore_delay=0,
+                           modifier_timeout=0.05, backend=be,
+                           long_text_via_paste=pastes_instead)
+        assert ins.insert(LONG) == InsertResult.NO_TARGET
+        assert _clipboard_calls(be) == [], pastes_instead
+        assert be.typed == [], pastes_instead
 
 
 def test_the_notice_points_at_history_not_the_clipboard():

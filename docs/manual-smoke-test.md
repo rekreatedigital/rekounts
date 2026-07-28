@@ -129,8 +129,10 @@ applies on its own within a moment. Throughout this section the app must
       hotkey is kept, nothing broken is saved.
 - [ ] **Text cleanup** toggles: turn off "Remove filler words", dictate
       "um hello" → the "um" survives. Turn it back on.
-- [ ] **Insert text by** = keystrokes, dictate → text is typed
-      character-by-character and your clipboard is untouched.
+- [ ] There is **no "Insert text by" row and no "Paste long dictations" row**
+      in **Behavior** at all — they were removed, not disabled. Insertion is
+      config-file-only now; the cases that exercise it are in the
+      "Text insertion in Windows 11 Notepad" section above.
 - [ ] **Processing**: in the INSTALLED app (and on any Mac) there is no
       Processing row in **General** at all, and nothing anywhere in Settings
       mentions CUDA — that build has no GPU stack in it, so the choice could

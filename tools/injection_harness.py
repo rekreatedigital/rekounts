@@ -25,6 +25,27 @@ Triggering on *observed progress* rather than a sleep makes the reproduction
 deterministic on any machine, whether or not the app's keyboard hook is
 installed to slow the burst down.
 
+WHAT THIS HARNESS CANNOT MEASURE — read before trusting a clean run
+-------------------------------------------------------------------
+The receiver is a **classic Win32 EDIT control**. That is the right target for
+the bug above, and the wrong one for the 2026-07-28 Notepad bug.
+
+Typed characters go out as VK_PACKET events, and a classic EDIT control
+resolves those into WM_CHAR correctly, every time, at any speed. The app that
+broke — Windows 11's rebuilt Notepad — is a WinUI/XAML app, and its input
+pipeline draws unresolved packets as a placeholder glyph. So this harness will
+report a **byte-perfect run for text that Notepad would turn into dots**.
+
+That matters for the open question about ``key_delay`` (see
+``_KEYSTROKE_SAFE_CHARS`` in rekounts/text_inserter.py): if you are measuring
+whether pacing makes typing safe in modern apps, **this tool cannot answer it**
+and a green result here is not evidence. That measurement needs a real
+WinUI/XAML target — Notepad itself — and the procedure is written up as a
+manual case in docs/manual-smoke-test.md.
+
+What this harness IS still the right tool for: the producer/consumer defect —
+held modifiers and focus changes corrupting a long transcript mid-delivery.
+
 Usage
 -----
     python tools/injection_harness.py --mode legacy    # shows the corruption
@@ -364,8 +385,11 @@ def main(argv=None):
     p.add_argument("--key-delay", type=float, default=0.0,
                    help="inter-key delay in seconds (the app ships 0.0)")
     p.add_argument("--no-paste", action="store_true",
-                   help="force literal keystrokes for long text instead of the "
-                        "clipboard handoff, to measure that path on its own")
+                   help="force literal keystrokes instead of the clipboard "
+                        "handoff, to measure the typing path on its own. "
+                        "REQUIRED to measure typing at all now: "
+                        "_KEYSTROKE_SAFE_CHARS is 0, so keystroke mode pastes "
+                        "everything without this flag")
     args = p.parse_args(argv)
 
     if sys.platform != "win32":
