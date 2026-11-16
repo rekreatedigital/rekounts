@@ -57,8 +57,40 @@ build.
 
 ## Release signing and notarization
 
-A public release also needs the owner's Developer ID Application identity and
-notarization credentials. No credentials are stored or created by this repo.
+### Free preview downloads
+
+An Apple Developer membership is not required to build, test or share a Mac
+preview. The current CI app has an ad-hoc signature, without a verified
+Developer ID or Apple notarization. Users may need an app-specific Open Anyway
+exception in System Settings; managed Macs may prohibit it. Do not ask users to
+disable Gatekeeper or remove quarantine with Terminal commands.
+
+After the app passes its native smoke checks, create a preview disk image:
+
+```sh
+python -m tools.package_macos_preview
+```
+
+This creates `Rekounts-macos-arm64-preview.dmg` or
+`Rekounts-macos-x86_64-preview.dmg` plus a SHA-256 file. The disk image contains
+the app, an Applications shortcut and `INSTALL.txt`. Packaging mounts it,
+copies the app out, and verifies the copied app's signature, architecture and
+metadata before accepting the output. CI performs this on both architectures.
+
+For a public preview, attach both disk images, checksums and the installation
+guide to an explicitly **prerelease** GitHub Release pinned to the tested
+commit. Keep it excluded from Latest so the existing Windows download keeps
+working. Marketing copy must call it a preview and disclose the manual approval
+step and remaining hardware checks. Do not link expiring Actions artifacts from
+the public download buttons.
+
+### Signed distribution
+
+For distribution that satisfies Gatekeeper's normal developer checks, use the
+owner's Developer ID Application identity and notarization credentials.
+These are available through the paid Apple Developer Program; enrollment is
+an owner decision, not a prerequisite for the free preview above.
+No credentials are stored or created by this repo.
 With the signing certificate already in the build Mac's keychain:
 
 ```sh
@@ -81,4 +113,4 @@ The final distribution ZIP is recreated after stapling.
 
 Signing, notarization and permission persistence across upgrades are unverified
 until tested with the actual identity. Finish [MACOS-TESTING.md](../MACOS-TESTING.md)
-on both architectures before publishing a Mac download.
+on both architectures before promoting the Mac preview to a supported release.

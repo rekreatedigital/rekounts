@@ -1,10 +1,16 @@
 # Try Rekounts on a MacBook
 
 The target is **Apple Silicon (M1 or newer) and Intel Macs running macOS 13 or
-newer**. Mac support is still experimental; there is no public Mac release yet.
+newer**. Mac support is still experimental; the download is a preview.
 Passing automated tests does not replace a real dictation test on your Mac.
 
 ## Use a test app
+
+Start with [the free Mac preview and installation guide](macos-preview.md).
+It has separate Apple Silicon and Intel disk images and a short hands-on test.
+No Python installation or Apple Developer membership is needed to try it.
+
+For newer development builds:
 
 After the Mac jobs pass in [GitHub Actions](https://github.com/rekreatedigital/rekounts/actions),
 their artifacts contain separate `arm64` and `x86_64` test apps. Choose `arm64`
