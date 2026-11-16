@@ -53,7 +53,7 @@ def served(monkeypatch):
 
     Records every requested URL so a test can assert what was contacted.
     """
-    state = {"urls": [], "ranges": [], "fail_first": 0, "truncate_at": None,
+    state = {"urls": [], "ranges": [], "contexts": [], "fail_first": 0, "truncate_at": None,
              "ignore_range": False}
 
     class FakeResp(io.BytesIO):
@@ -67,7 +67,8 @@ def served(monkeypatch):
         def __exit__(self, *a):
             return False
 
-    def fake_urlopen(req, timeout=None):
+    def fake_urlopen(req, timeout=None, context=None):
+        state["contexts"].append(context)
         url = req.full_url
         state["urls"].append(url)
         if state["fail_first"] > 0:
@@ -89,6 +90,17 @@ def served(monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     return state
+
+
+def test_model_download_uses_verified_tls(tmp_path, fake_manifest, served):
+    import ssl
+    models.download_model("testmodel", fake_manifest, tmp_path / "testmodel")
+    assert served["contexts"]
+    for context in served["contexts"]:
+        assert isinstance(context, ssl.SSLContext)
+        assert context.check_hostname
+        assert context.verify_mode == ssl.CERT_REQUIRED
+        assert context.cert_store_stats()["x509_ca"] > 0
 
 
 # ------------------------------------------------------- real-manifest integrity
@@ -157,7 +169,7 @@ def test_a_corrupted_download_is_rejected_not_installed(tmp_path, fake_manifest,
         def __exit__(self, *a):
             return False
 
-    def corrupt_urlopen(req, timeout=None):
+    def corrupt_urlopen(req, timeout=None, context=None):
         filename = req.full_url.rsplit("--", 1)[-1]
         return FakeResp(b"X" * len(BLOBS[filename]))
 

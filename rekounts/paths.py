@@ -44,21 +44,20 @@ def app_data_dir() -> Path:
     return _base_dir() / "Rekounts"
 
 
-def legacy_app_data_dir() -> Path:
+def legacy_app_data_dir() -> Path | None:
     """Where an upgrading user's data would be found under an OLD location.
 
     * Windows: `%APPDATA%\\TalkativeAI` — the pre-rename folder, resolved
       exactly like :func:`app_data_dir` so the data is found on the same
       drive/roaming profile it was written to.
-    * macOS: `~/Rekounts` — the portable home-directory fallback this module
-      used before the macOS port gave darwin a real Application Support home.
-      (The TalkativeAI name never shipped on macOS, so the rename migration
-      does not apply there; the location move does.)
+    * macOS: no legacy install shipped. In particular, `~/Rekounts` can be
+      the source checkout (`~/rekounts` on a case-insensitive filesystem),
+      never an implicit migration source.
 
     See ``rekounts/migrate.py`` — nothing else should reference old locations.
     """
     if sys.platform == "darwin" and not os.environ.get("APPDATA"):
-        return Path.home() / "Rekounts"
+        return None
     return _base_dir() / LEGACY_APP_DIR_NAME
 
 

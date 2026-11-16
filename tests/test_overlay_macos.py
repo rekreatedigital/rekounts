@@ -1,6 +1,8 @@
 """The macOS overlay-visibility helpers (pure parts; native NSPanel state
 needs real hardware — see MACOS-TESTING.md for the manual verification)."""
 import rekounts.ui.overlay as overlay
+import pytest
+from unittest.mock import Mock
 
 
 def test_collection_behavior_is_all_spaces_plus_fullscreen_auxiliary():
@@ -38,4 +40,26 @@ def test_helpers_are_noops_off_darwin():
         if attr is not None:
             assert w.testAttribute(attr) is False
     w.deleteLater()
+    app.processEvents()
+
+
+@pytest.mark.parametrize("state", ["idle", "recording", "processing"])
+def test_mac_state_changes_never_raise_the_application(monkeypatch, state):
+    import os
+    from types import SimpleNamespace
+    from PySide6 import QtWidgets
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    monkeypatch.setattr(overlay, "sys", SimpleNamespace(platform="darwin"))
+    window = Mock()
+    monkeypatch.setattr(overlay, "_mac_window", lambda w: window, raising=False)
+    pill = overlay.Overlay()
+    raised = Mock()
+    monkeypatch.setattr(pill, "raise_", raised)
+    pill._apply_state(state)
+    assert not raised.called
+    window.orderFrontRegardless.assert_called()
+    pill.hide()
+    pill.deleteLater()
     app.processEvents()

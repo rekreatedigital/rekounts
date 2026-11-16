@@ -128,7 +128,8 @@ def fetch_latest_release(slug: str, timeout: float = UPDATE_TIMEOUT_S) -> dict:
         RELEASES_API.format(slug=slug),
         headers={"Accept": "application/vnd.github+json",
                  "User-Agent": f"Rekounts/{__version__}"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    from rekounts.network import tls_context
+    with urllib.request.urlopen(req, timeout=timeout, context=tls_context()) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -147,7 +148,7 @@ class TrayApp:
                  config=None, on_mic_changed=None, on_language_changed=None,
                  languages=None, notifications_enabled=None,
                  on_open_scratchpad=None, scratchpad_enabled=None,
-                 on_send_feedback=None):
+                 on_send_feedback=None, on_open_permissions=None):
         """
         Backward-compatible: only the first three args are required.
 
@@ -209,6 +210,8 @@ class TrayApp:
             self._refresh_scratchpad_action()
 
         menu.addAction("Settings…", on_open_settings)
+        if on_open_permissions is not None:
+            menu.addAction("Permissions…", on_open_permissions)
 
         # Submenus are created empty and filled on aboutToShow so both the
         # device list and the radio checkmarks reflect reality at open time

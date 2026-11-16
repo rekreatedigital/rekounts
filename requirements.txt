@@ -1,4 +1,11 @@
 faster-whisper==1.0.3
+certifi>=2024.7.4
+# Resolve the same native speech stack on both Mac architectures. In particular,
+# newer ONNX Runtime releases no longer all provide Intel Mac wheels.
+ctranslate2==4.8.1; sys_platform == 'darwin'
+onnxruntime==1.23.2; sys_platform == 'darwin'
+av==12.3.0; sys_platform == 'darwin'
+tokenizers==0.20.3; sys_platform == 'darwin'
 sounddevice==0.4.7
 numpy==1.26.4
 pynput==1.7.7

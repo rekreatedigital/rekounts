@@ -89,7 +89,7 @@ class MigrationResult:
                 f"failed={[n for n, _ in self.failed]} complete={self.complete}")
 
 
-def needs_migration(new_dir: Path, legacy_dir: Path) -> bool:
+def needs_migration(new_dir: Path, legacy_dir: Path | None) -> bool:
     """True when there is old-name data to bring across and we have not finished.
 
     Deliberately does NOT consider whether the new folder already holds data:
@@ -97,7 +97,7 @@ def needs_migration(new_dir: Path, legacy_dir: Path) -> bool:
     target as "nothing to do" is exactly what would strand history.db after a
     run that copied config.json and then died.
     """
-    if legacy_dir == new_dir:
+    if legacy_dir is None or legacy_dir == new_dir:
         return False   # non-Windows fallback could resolve both to one place
     if not legacy_dir.is_dir():
         return False

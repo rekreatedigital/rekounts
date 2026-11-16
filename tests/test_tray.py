@@ -443,7 +443,10 @@ def github(monkeypatch):
         body = None
         requests = []
 
-        def urlopen(self, req, timeout=None):
+        contexts = []
+
+        def urlopen(self, req, timeout=None, context=None):
+            self.contexts.append(context)
             self.requests.append(req)
             if self.error:
                 raise self.error
@@ -480,6 +483,15 @@ def test_the_check_asks_for_the_latest_release_not_the_latest_commit(updater, gi
     assert request.full_url == (
         f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest")
     assert "commits" not in request.full_url
+
+
+def test_the_update_check_uses_verified_tls_with_trusted_roots(updater, github):
+    import ssl
+    updater._fetch_latest()
+    [context] = github.contexts
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname
+    assert context.cert_store_stats()["x509_ca"] > 0
 
 
 def test_the_request_identifies_itself_and_asks_for_the_api_media_type(updater,

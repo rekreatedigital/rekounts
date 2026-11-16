@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for Rekounts on macOS (groundwork — NOT yet verified on
-real hardware; see MACOS-TESTING.md and docs/macos-packaging.md).
+"""Native Mac app build, exercised by CI for both processor architectures.
+Hands-on acceptance remains in MACOS-TESTING.md; see docs/macos-packaging.md.
 
 Produces dist/Rekounts.app — a menu-bar (tray) app with no Dock icon:
 
@@ -18,9 +18,9 @@ app preserves this because it runs the same __main__.py.
 
 Build (on a Mac):  .venv/bin/python -m PyInstaller --clean Rekounts-macos.spec
 
-Signing/notarization are deliberately NOT attempted here — they need the
-owner's Apple Developer account. The full procedure is documented in
-docs/macos-packaging.md.
+PyInstaller ad-hoc signs development builds. REKOUNTS_MAC_SIGNING_IDENTITY
+opts into the owner's Developer ID certificate; notarization stays a separate
+step documented in docs/macos-packaging.md.
 """
 import os
 import re
@@ -80,7 +80,7 @@ a = Analysis(
     noarchive=False,
 )
 
-pyz = PYZ(a.pure, a.zipped_data)
+pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
@@ -96,18 +96,17 @@ exe = EXE(
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,        # build arch = host arch; universal2 needs fat wheels
-    codesign_identity=None,  # unsigned groundwork build; see docs/macos-packaging.md
-    # Left None on purpose: this spec produces an UNSIGNED app. When the owner's
-    # Apple Developer account exists, signing happens as its own codesign step
-    # (docs/macos-packaging.md) using packaging/entitlements.plist — which is
-    # written and reviewed, just never yet run.
-    entitlements_file=None,
+    codesign_identity=os.environ.get("REKOUNTS_MAC_SIGNING_IDENTITY"),
+    # Development builds are ad-hoc signed by PyInstaller. Supplying an identity
+    # signs the nested binaries with hardened runtime and these entitlements;
+    # notarization is a separate owner-controlled step.
+    entitlements_file=("packaging/entitlements.plist"
+                       if os.environ.get("REKOUNTS_MAC_SIGNING_IDENTITY") else None),
 )
 
 coll = COLLECT(
     exe,
     a.binaries,
-    a.zipfiles,
     a.datas,
     strip=False,
     upx=False,
@@ -133,18 +132,13 @@ app = BUNDLE(
         # REQUIRED: without this key macOS terminates the app the moment the
         # microphone is opened, with no prompt and no catchable error.
         "NSMicrophoneUsageDescription":
-            "Rekounts records your voice only while you hold the dictation "
-            "hotkey, transcribes it locally on this Mac, and never sends "
-            "audio anywhere.",
+            "Rekounts uses your microphone for dictation. Speech is transcribed "
+            "on this Mac; audio is never uploaded.",
         "NSHumanReadableCopyright":
             "Copyright (C) 2026 Rekreate Digital. GPL-3.0.",
-        # UNVERIFIED against a real build. Note the tension found on 2026-07-25:
-        # on Apple Silicon, `pip install -r requirements.txt` resolves an
-        # onnxruntime wheel tagged macosx_14_0_arm64 (macOS 14+). pip backtracks
-        # to an older onnxruntime on 12-13, so a build made there uses a version
-        # nothing has tested. Either raise this to 14.0 or test on 12 before any
-        # download ships — see docs/macos-one-hour.md.
-        "LSMinimumSystemVersion": "12.0",
+        # The pinned ONNX Runtime wheels target macOS 13 on both architectures.
+        # This is a dependency floor; hardware coverage is tracked separately.
+        "LSMinimumSystemVersion": "13.0",
         "NSHighResolutionCapable": True,
     },
 )

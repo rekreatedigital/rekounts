@@ -1392,6 +1392,11 @@ def _run():
         # a replacement transcriber a model reload installs later.
         bridge.notify.emit("Language changed — applies to the next dictation.")
 
+    permissions_dialog = None
+    if sys.platform == "darwin":
+        from rekounts.ui.permissions_dialog import PermissionsDialog
+        permissions_dialog = PermissionsDialog(on_quit=app.quit)
+
     tray = TrayApp(
         app, on_open_settings=open_settings, on_quit=app.quit,
         on_open_dashboard=dashboard.open_and_raise,
@@ -1403,7 +1408,9 @@ def _run():
         # instead of only the ones routed through the bridge.
         notifications_enabled=lambda: bool(cfg.get("show_notifications")),
         on_open_scratchpad=scratchpad.open_and_raise,
-        scratchpad_enabled=lambda: bool(cfg.get("scratchpad_enabled")))
+        scratchpad_enabled=lambda: bool(cfg.get("scratchpad_enabled")),
+        on_open_permissions=(permissions_dialog.open_and_raise
+                             if permissions_dialog is not None else None))
     # The tray is the first real notification sink; anything raised earlier in
     # startup (an invalid hotkey falling back to the default, a risky-combo
     # warning) is replayed now instead of having been dropped. The switch is
@@ -1415,9 +1422,10 @@ def _run():
     # entry. The full rules and their ordering live on _reconcile_startup.
     _reconcile_startup(cfg)
 
-    # macOS permission onboarding — after the tray is attached so the notices
-    # actually show as toasts rather than sitting in the buffer.
-    _report_missing_permissions(bridge.notify.emit)
+    # Essential setup must stay visible even with notifications disabled or
+    # macOS Focus mode enabled. The menu can reopen it after later revocations.
+    if permissions_dialog is not None and permissions_dialog.needs_setup():
+        QtCore.QTimer.singleShot(0, permissions_dialog.open_and_raise)
 
     def cleanup():
         # Release the mic (pre-roll holds it open) and the history db cleanly.
@@ -1449,4 +1457,8 @@ def _run():
 
 
 if __name__ == "__main__":
+    if "--mac-smoke-test" in sys.argv:
+        from rekounts.mac_smoke import main as mac_smoke_main
+        args = [arg for arg in sys.argv[1:] if arg != "--mac-smoke-test"]
+        sys.exit(mac_smoke_main(args))
     main()

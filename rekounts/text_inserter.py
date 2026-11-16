@@ -190,6 +190,7 @@ class InsertResult(str, Enum):
     TYPED = "typed"          # text sent via synthesized keystrokes
     NO_TARGET = "no_target"  # no text surface focused / focus changed
     BLOCKED = "blocked"      # target is elevated (admin) — UIPI blocks injection
+    PERMISSION_DENIED = "permission_denied"  # macOS Accessibility consent missing
     INTERRUPTED = "interrupted"  # typing stopped mid-way: modifiers stayed held
     FAILED = "failed"        # an unexpected error prevented insertion
     SKIPPED = "skipped"      # nothing to insert (empty text)
@@ -204,6 +205,7 @@ class InsertResult(str, Enum):
 _UNDELIVERED = frozenset({
     InsertResult.NO_TARGET,
     InsertResult.BLOCKED,
+    InsertResult.PERMISSION_DENIED,
     InsertResult.INTERRUPTED,
     InsertResult.FAILED,
 })
@@ -225,6 +227,9 @@ _UNDELIVERED_MESSAGES = {
     InsertResult.BLOCKED.value:
         "Can't type into an admin window — the transcript is in History, ready "
         "to copy.",
+    InsertResult.PERMISSION_DENIED.value:
+        "macOS hasn't allowed text insertion. Open Permissions… from the menu "
+        "bar and enable Accessibility. The transcript is in History, ready to copy.",
     InsertResult.INTERRUPTED.value:
         "Typing stopped part-way — a key was still held down. Part of it is "
         "already in the field; the whole transcript is in History, ready to copy.",
@@ -449,7 +454,7 @@ class _MacBackend:
 
     available = True
 
-    def __init__(self, quartz=None, appkit=None):
+    def __init__(self, quartz=None, appkit=None, accessibility=None):
         if quartz is None:
             import Quartz as quartz
         if appkit is None:
@@ -457,6 +462,7 @@ class _MacBackend:
         self._q = quartz
         self._ak = appkit
         self._pasteboard = appkit.NSPasteboard.generalPasteboard()
+        self._accessibility = accessibility
 
     # -- window / focus -----------------------------------------------------
     def foreground_window(self):
@@ -475,6 +481,12 @@ class _MacBackend:
 
     def is_blocked(self, hwnd):
         return False
+
+    def insertion_permission(self):
+        # Check at delivery time too: a grant can be revoked after startup,
+        # and macOS silently drops posted events rather than raising an error.
+        from rekounts.permissions import _probe_accessibility
+        return (self._accessibility or _probe_accessibility)()
 
     # -- modifiers ----------------------------------------------------------
     def modifiers_down(self):
@@ -514,7 +526,7 @@ class _MacBackend:
             return None
 
     def restore_clipboard(self, snapshot):
-        if not snapshot:
+        if snapshot is None:
             return
         try:
             items = []
@@ -527,7 +539,8 @@ class _MacBackend:
                         pass   # best-effort per type
                 items.append(item)
             self._pasteboard.clearContents()
-            self._pasteboard.writeObjects_(items)
+            if items:
+                self._pasteboard.writeObjects_(items)
         except Exception:
             pass   # best-effort, like the Win32 restore
 
@@ -593,8 +606,20 @@ class _MacBackend:
                         return False
                     time.sleep(delay)
             else:
-                for start in range(0, len(line), _MAC_UNICODE_CHUNK):
-                    self._send_text_chunk(line[start:start + _MAC_UNICODE_CHUNK])
+                # Quartz's limit counts UTF-16 units, not Python characters.
+                # Split at character boundaries so an emoji is never bisected.
+                chunks, chunk, units = [], "", 0
+                for ch in line:
+                    width = len(ch.encode("utf-16-le")) // 2
+                    if units + width > _MAC_UNICODE_CHUNK:
+                        chunks.append(chunk)
+                        chunk, units = "", 0
+                    chunk += ch
+                    units += width
+                if chunk:
+                    chunks.append(chunk)
+                for chunk in chunks:
+                    self._send_text_chunk(chunk)
                     if should_continue is not None and not should_continue():
                         return False
         return True
@@ -1232,6 +1257,9 @@ class TextInserter:
         re-reads the foreground window and checks the no-target / focus-change /
         elevation conditions against that fresh value.
         """
+        permission = getattr(self.backend, "insertion_permission", None)
+        if permission is not None and permission() is False:
+            return InsertResult.PERMISSION_DENIED
         self._wait_for_modifiers()
         hwnd = self.backend.foreground_window()
         if self.backend.is_no_target(hwnd):

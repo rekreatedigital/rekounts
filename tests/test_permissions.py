@@ -22,6 +22,30 @@ def test_non_darwin_has_nothing_to_check():
     assert missing_permission_messages([]) == []
 
 
+def test_requests_are_explicit_and_do_not_claim_the_grant(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from rekounts.permissions import request_permission
+
+    quartz = SimpleNamespace(CGRequestListenEventAccess=Mock(return_value=False))
+    ax = SimpleNamespace(AXIsProcessTrustedWithOptions=Mock(return_value=False),
+                         kAXTrustedCheckOptionPrompt="prompt")
+    device = SimpleNamespace(requestAccessForMediaType_completionHandler_=Mock())
+    av = SimpleNamespace(AVCaptureDevice=device, AVMediaTypeAudio="audio")
+    for name, module in (("Quartz", quartz), ("ApplicationServices", ax),
+                         ("AVFoundation", av)):
+        monkeypatch.setitem(sys.modules, name, module)
+    assert request_permission("Input Monitoring", platform="win32") is False
+    quartz.CGRequestListenEventAccess.assert_not_called()
+    assert request_permission("Input Monitoring", platform="darwin") is True
+    quartz.CGRequestListenEventAccess.assert_called_once_with()
+    assert request_permission("Accessibility", platform="darwin") is True
+    ax.AXIsProcessTrustedWithOptions.assert_called_once_with({"prompt": True})
+    assert request_permission("Microphone", platform="darwin") is True
+    assert device.requestAccessForMediaType_completionHandler_.call_args.args[0] == "audio"
+
+
 def test_all_granted_is_silent():
     assert missing_permission_messages(states()) == []
 

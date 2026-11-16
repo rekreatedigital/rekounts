@@ -2,14 +2,12 @@
 <!--
   Entitlements for the hardened-runtime signature of dist/Rekounts.app.
 
-  NOT YET USED BY ANY BUILD. Signing needs the owner's Apple Developer account
-  ($99/yr) — docs/macos-packaging.md spells out the full procedure and what it
-  costs. This file exists so that when the account arrives, the signing step is
-  one command and not a research task, and so the list can be reviewed now,
-  while the reasoning is fresh, rather than under release pressure.
+  Used by Rekounts-macos.spec when REKOUNTS_MAC_SIGNING_IDENTITY is supplied.
+  Development CI builds use ad-hoc signing without hardened runtime instead.
+  See docs/macos-packaging.md for the owner-controlled release procedure.
 
   Reviewed against a from-source reading of what Rekounts loads. Nothing here
-  has been exercised by an actual codesign run.
+  has been verified with a Developer ID signature and notarization yet.
 
   Three entitlements, and no more. Every extra one is attack surface, is
   something a notarization reviewer has to accept, and would weaken the claim on

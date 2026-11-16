@@ -350,7 +350,8 @@ def _http_download(url, part_path, expected_size, on_bytes):
     if have:
         headers["Range"] = f"bytes={have}-"
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+    from rekounts.network import tls_context
+    with urllib.request.urlopen(req, timeout=_TIMEOUT, context=tls_context()) as resp:
         # If the server ignored the Range (200 not 206), restart from zero.
         mode = "ab"
         if have and resp.status == 200:

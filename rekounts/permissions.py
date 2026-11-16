@@ -14,8 +14,8 @@ app can catch at the point of use, the events simply never arrive:
     first time the mic is opened.
 
 A missing permission is therefore indistinguishable from a broken app unless
-we check explicitly and say so. This module does the checking; ``__main__``
-turns the answers into tray notices at startup.
+we check explicitly and say so. This module does the checking; the Permissions
+window shows the answers and offers system prompts when the user clicks Allow.
 
 Everything is defensive and injectable:
 
@@ -105,6 +105,44 @@ def _probe_microphone():
 # The System Settings pane path for each consent, spelled out because the
 # panes moved in macOS 13+ and users reasonably cannot find them.
 _SETTINGS_PATH = "System Settings > Privacy & Security > %s"
+
+_SETTINGS_PANES = {
+    "Input Monitoring": "Privacy_ListenEvent",
+    "Accessibility": "Privacy_Accessibility",
+    "Microphone": "Privacy_Microphone",
+}
+
+
+def permission_settings_url(name: str) -> str:
+    return ("x-apple.systempreferences:com.apple.preference.security?"
+            + _SETTINGS_PANES[name])
+
+
+def request_permission(name: str, platform=None) -> bool:
+    """Ask macOS for consent following an explicit user action.
+
+    True means the request was made, not that access was granted. The UI
+    rechecks the probes; asynchronous system dialogs may still be open.
+    """
+    if (platform if platform is not None else sys.platform) != "darwin":
+        return False
+    try:
+        if name == "Input Monitoring":
+            import Quartz
+            Quartz.CGRequestListenEventAccess()
+        elif name == "Accessibility":
+            import ApplicationServices as ax
+            ax.AXIsProcessTrustedWithOptions({ax.kAXTrustedCheckOptionPrompt: True})
+        elif name == "Microphone":
+            import AVFoundation as av
+            av.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
+                av.AVMediaTypeAudio, lambda granted: None)
+        else:
+            return False
+        return True
+    except Exception:
+        log.warning("Could not request %s access", name, exc_info=True)
+        return False
 
 
 def _enable_step(pane: str, frozen: bool, reopen: bool = True) -> str:

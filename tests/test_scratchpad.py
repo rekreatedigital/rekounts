@@ -187,6 +187,33 @@ def test_closing_hides_rather_than_destroying(pad):
     assert pad.edit is not None
 
 
+def test_close_accepts_the_event_so_application_quit_is_not_cancelled(pad):
+    event = QtGui.QCloseEvent()
+    pad.closeEvent(event)
+    assert event.isAccepted()
+
+
+def test_standard_bold_shortcut_formats_the_selected_text(pad, app):
+    from PySide6 import QtTest
+    pad.open_and_raise()
+    app.processEvents()
+    pad.edit.setPlainText("format this")
+    pad.edit.selectAll()
+    QtTest.QTest.keySequence(pad.edit, QtGui.QKeySequence(QtGui.QKeySequence.Bold))
+    assert pad.edit.textCursor().charFormat().fontWeight() >= QtGui.QFont.Bold
+
+
+def test_standard_close_shortcut_preserves_the_note_for_reopening(pad, app):
+    from PySide6 import QtTest
+    pad.open_and_raise()
+    app.processEvents()
+    pad.edit.setPlainText("keep this note")
+    QtTest.QTest.keySequence(pad.edit, QtGui.QKeySequence(QtGui.QKeySequence.Close))
+    assert not pad.isVisible()
+    pad.open_and_raise()
+    assert pad.edit.toPlainText() == "keep this note"
+
+
 # --------------------------------------------------------------- formatting
 def test_bold_applies_to_what_is_typed_next(pad):
     pad.format_buttons["bold"].setChecked(True)

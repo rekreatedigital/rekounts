@@ -86,6 +86,13 @@ _MOD_ORDER = {"ctrl": 0, "alt": 1, "shift": 2, "win": 3}
 def _qt_event_to_token(event) -> str | None:
     """Map a Qt key event to a hotkey token, or None if unsupported."""
     key = event.key()
+    # Qt maps the Mac Command key to Key_Control, and physical Control to
+    # Key_Meta. Config/pynput tokens describe the physical keys on every OS.
+    if platform_text.is_mac():
+        if key == QtCore.Qt.Key_Control:
+            return "win"
+        if key == QtCore.Qt.Key_Meta:
+            return "ctrl"
     if key in _QT_MODIFIERS:
         return _QT_MODIFIERS[key]
     if key in _QT_NAMED:
@@ -153,6 +160,12 @@ class HotkeyCaptureEdit(QtWidgets.QLineEdit):
         self._held.clear()
         self._preview = ""
         self.setText("Press your keys…")
+
+    def event(self, e):
+        if e.type() == QtCore.QEvent.ShortcutOverride:
+            e.accept()
+            return True
+        return super().event(e)
 
     def focusOutEvent(self, e):
         super().focusOutEvent(e)
