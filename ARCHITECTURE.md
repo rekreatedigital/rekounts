@@ -86,7 +86,8 @@ This replaced the old restart-on-save, which raced the single-instance mutex.
 | `__init__.py` | `__version__` — the single source of truth for the version string (`pyproject.toml` and `Rekounts.spec` both read it) |
 | `__main__.py` | Entry point, logging, single-instance mutex, wiring, live-apply, Qt event loop |
 | `config.py` | `Config` + `DEFAULTS`; loads/saves `config.json`, backfills missing keys, recovers from corruption, migrates the legacy `ptt_hotkey` into the unified `hotkey` |
-| `controller.py` | `AppController` — orchestrates record → transcribe → clean → insert; drives the state machine; emits `on_state` / `on_result` |
+| `controller.py` | `AppController` — orchestrates recording, background preparation and final delivery; drives the state machine; emits `on_state` / `on_result` |
+| `incremental.py` | One background worker per dictation; cuts at confirmed pauses after about 15 seconds, retains raw segment evidence, and finishes only the remaining audio on stop. No partial insertion or disk I/O |
 | `state_machine.py` | `StateMachine` over `IDLE → RECORDING → PROCESSING → IDLE` (rejects illegal transitions) |
 | `audio_recorder.py` | `AudioRecorder` — 16 kHz mono capture via `sounddevice`; optional pre-roll ring buffer; live level |
 | `audio_utils.py` | `rms_level`, `normalize_gain` — pure-numpy audio helpers (gain-boost quiet mics) |
@@ -146,14 +147,15 @@ one-key gesture and the controller's state machine from drifting apart.
 hotkey (pynput)  →  TapHoldGesture  →  HotkeyManager
   → AppController.start_recording()  [IDLE → RECORDING]
       → AudioRecorder.start()        (mic → 16 kHz mono frames, RAM only)
+      → BackgroundTranscription     (completed sections → local model, RAM only)
       → on_state("recording") → Bridge → Overlay expands to the pill
   ── user speaks ──
 release / tap
   → AppController.stop_recording()   [RECORDING → PROCESSING]
       → run_async(_process):
           AudioRecorder.stop()       → numpy buffer
-          normalize_gain()           → boost quiet mics
-          Transcriber.transcribe()   → raw text (faster-whisper, local)
+          background.finish()        → decode remaining audio, join raw segments
+                                      (whole clip if preparation failed or settings changed)
           hallucination filter       → drop "Thank you."-style phantoms
           TextCleaner.clean()        → cleaned text
           TextInserter.insert()      → paste/keystroke → InsertResult
@@ -163,6 +165,17 @@ release / tap
                                         safety net)
   → [PROCESSING → IDLE]
 ```
+
+Background preparation uses the selected model, language, beam width and
+dictionary. It never forces a cut in continuous speech. The detector scans a
+bounded 30-second window; audio preceding it remains intact. Stop waits for
+at most the current background inference, then handles all remaining audio in
+one pass, without draining a queue of small jobs. Cancellation discards prepared
+segments and releases the model between decoder segments. The phantom filter
+runs once at the real end, and cleanup/insertion/history still happen once.
+
+Diagnostic timings report audio duration, prepared duration, transcription
+after stop and final delivery time. They contain no audio or transcript text.
 
 ## Where things live on disk
 

@@ -7,7 +7,18 @@ The version string lives in one place — `rekounts/__init__.py` — and
 everything else (`pyproject.toml`, the `.exe` file properties) reads it from
 there.
 
-## Unreleased
+## [0.4.4 preview] — 2026-11-17
+
+### Faster results after long dictations
+
+- Prepare completed sections while you speak, using the same local speech
+  model and accuracy settings. After you stop, only the remaining audio needs
+  to be transcribed; the complete text is still pasted once.
+- Split at confirmed pauses, preserve all audio, and fall back to a full pass
+  if preparation fails or recognition settings change mid-recording.
+- Keep cancellation, dictionary changes and the end-of-dictation phantom filter
+  working with the background pipeline. Add timing diagnostics without words
+  or recordings in the log.
 
 ### Mac compatibility and verification
 
@@ -22,8 +33,8 @@ there.
 - Activate windows opened from the menu bar, add standard Scratchpad formatting
   shortcuts, and allow quitting while the note is open without losing it.
 
-Mac support remains experimental pending the hardware checklist and a signed,
-notarized release. No public Mac download is announced by these changes.
+Mac support remains a preview pending the hardware checklist and a signed,
+notarized release. Separate Intel and Apple Silicon disk images are available.
 
 ## [0.4.3] — 2026-07-28
 

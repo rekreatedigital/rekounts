@@ -1430,6 +1430,10 @@ def _run():
     def cleanup():
         # Release the mic (pre-roll holds it open) and the history db cleanly.
         try:
+            controller.cancel_recording()
+        except Exception:
+            pass
+        try:
             # Quitting from the tray while a debounced note edit is still
             # pending would otherwise lose the last thing the user typed.
             scratchpad.flush()
@@ -1457,6 +1461,10 @@ def _run():
 
 
 if __name__ == "__main__":
+    if "--dictation-smoke-test" in sys.argv:
+        from rekounts.dictation_smoke import main as dictation_smoke_main
+        args = [arg for arg in sys.argv[1:] if arg != "--dictation-smoke-test"]
+        sys.exit(dictation_smoke_main(args))
     if "--mac-smoke-test" in sys.argv:
         from rekounts.mac_smoke import main as mac_smoke_main
         args = [arg for arg in sys.argv[1:] if arg != "--mac-smoke-test"]

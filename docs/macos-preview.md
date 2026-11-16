@@ -1,6 +1,6 @@
 # Install the free Mac preview
 
-Download from the [Mac preview release](https://github.com/rekreatedigital/rekounts/releases/tag/mac-preview-2026-11-17).
+Download from the [0.4.4 preview release](https://github.com/rekreatedigital/rekounts/releases/tag/v0.4.4-preview.1).
 This preview is for testing on a real Mac before a supported Mac release.
 It is not Developer ID signed or notarized by Apple. You do not need an Apple
 Developer membership or payment to try it.

@@ -73,6 +73,23 @@ def test_legacy_mode_opens_on_start_closes_on_stop(fake_sd):
     assert stream.closed is True          # mic released on stop
 
 
+def test_background_reads_include_preroll_and_never_consume_stop_audio(fake_sd):
+    rec = AudioRecorder(preroll_seconds=0.5)
+    rec.arm()
+    stream = fake_sd.streams[0]
+    stream.feed(8000)
+    rec.start()
+    stream.feed(4000)
+    first, position = rec.read_frames(0)
+    stream.feed(7000)
+    rest, position = rec.read_frames(position)
+    assert rec.read_frames(position)[0] == []
+    expected = np.concatenate(first + rest).reshape(-1)
+    np.testing.assert_array_equal(rec.stop(), expected)
+    assert len(expected) == 19000
+    assert rec.read_frames(0) == ([], 0)
+
+
 def test_preroll_keeps_stream_open_and_seeds_recording(fake_sd):
     rec = AudioRecorder(device=None, preroll_seconds=0.5)  # 8000 samples @16k
     rec.arm()
