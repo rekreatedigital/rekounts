@@ -485,6 +485,15 @@ def test_the_check_asks_for_the_latest_release_not_the_latest_commit(updater, gi
     assert "commits" not in request.full_url
 
 
+def test_the_update_check_uses_verified_tls_with_trusted_roots(updater, github):
+    import ssl
+    updater._fetch_latest()
+    [context] = github.contexts
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname
+    assert context.cert_store_stats()["x509_ca"] > 0
+
+
 def test_the_request_identifies_itself_and_asks_for_the_api_media_type(updater,
                                                                        github):
     updater._fetch_latest()

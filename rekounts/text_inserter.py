@@ -484,7 +484,7 @@ class _MacBackend:
 
     def insertion_permission(self):
         # Check at delivery time too: a grant can be revoked after startup,
-        # and CGEventPost silently drops events rather than raising an error.
+        # and macOS silently drops posted events rather than raising an error.
         from rekounts.permissions import _probe_accessibility
         return (self._accessibility or _probe_accessibility)()
 

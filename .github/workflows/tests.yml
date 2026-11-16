@@ -70,7 +70,12 @@ jobs:
         #   HotKey.parse("<ctrl>+<cmd>") dies on "duplicate" keys).
         # libegl1: Qt's import on slimmer runner images.
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libportaudio2 xvfb libegl1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libportaudio2 xvfb libegl1 pulseaudio
+          # Recent PortAudio builds initialize PulseAudio at import time.
+          # The suite fakes recording, but the library still needs a server.
+          pulseaudio --start --exit-idle-time=-1
 
       - uses: actions/setup-python@v5
         with:
