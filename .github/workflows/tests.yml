@@ -4,6 +4,7 @@ on:
   push:
     branches: [master]
   pull_request:
+  workflow_dispatch:
 
 # The suite needs nothing but the code. Stated explicitly so a workflow
 # added later cannot quietly inherit write access to the repo.
@@ -118,7 +119,20 @@ jobs:
     # Input Monitoring or Accessibility grant, so posted events would go
     # nowhere and no test asks them to. Those checks need a physical Mac —
     # MACOS-TESTING.md, and docs/macos-one-hour.md for the order to do them in.
-    runs-on: macos-latest
+    name: macOS runtime and app (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            arch: arm64
+          - os: macos-15-intel
+            arch: x86_64
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+      APPDATA: ${{ runner.temp }}/rekounts-mac-smoke
     steps:
       - uses: actions/checkout@v4
 
@@ -150,6 +164,57 @@ jobs:
           # not something the unit suite should depend on.
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest -q
+
+      - name: Fetch the smoke-test speech model
+        run: python -c "from rekounts.models import ensure_model; ensure_model('base')"
+
+      - name: Native window and speech smoke check (source)
+        env:
+          QT_QPA_PLATFORM: cocoa
+        run: >-
+          python -m rekounts --mac-smoke-test
+          --model-dir "$APPDATA/Rekounts/models/base"
+          --report build/macos-source-smoke.json
+
+      - name: Build the Mac app
+        run: |
+          python -m pip install pyinstaller==6.22.3
+          python -m PyInstaller --noconfirm --clean Rekounts-macos.spec
+
+      - name: Verify bundle identity, architecture and signature
+        run: |
+          python tools/check_macos_bundle.py dist/Rekounts.app
+          lipo -verify_arch ${{ matrix.arch }} dist/Rekounts.app/Contents/MacOS/Rekounts
+          codesign --verify --deep --strict dist/Rekounts.app
+
+      - name: Native window and speech smoke check (bundled)
+        env:
+          QT_QPA_PLATFORM: cocoa
+        run: >-
+          dist/Rekounts.app/Contents/MacOS/Rekounts --mac-smoke-test
+          --model-dir "$APPDATA/Rekounts/models/base"
+          --report build/macos-bundle-smoke.json
+
+      - name: Archive the test app with symlinks intact
+        run: >-
+          ditto -c -k --keepParent dist/Rekounts.app
+          dist/Rekounts-macos-${{ matrix.arch }}-test.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rekounts-macos-${{ matrix.arch }}-test
+          path: dist/Rekounts-macos-${{ matrix.arch }}-test.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-${{ matrix.arch }}-reports
+          path: |
+            build/macos-*-smoke.json
+            build/Rekounts-macos/warn-*.txt
+          if-no-files-found: ignore
 
   lint:
     # Ruff is pure-Python-analysis, so this runs on the cheaper/faster Linux

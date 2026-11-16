@@ -16,9 +16,9 @@ contributions are very welcome.
   ```
 
   CI runs the same tests on Windows for Python 3.11 and 3.12, on Linux and
-  macOS for 3.12 (the app is Windows-only, but the suite fakes the Windows
-  pieces — that keeps the code portable for a future macOS port), plus a
-  `ruff check .` lint pass. All of it is quick to run locally:
+  macOS for 3.12, plus a `ruff check .` lint pass. Separate Intel and Apple
+  Silicon jobs build the Mac app and run native Cocoa/speech smoke checks.
+  See [Mac packaging](docs/macos-packaging.md). The unit checks run locally:
 
   ```bat
   .venv\Scripts\python -m pip install -r requirements-test.txt

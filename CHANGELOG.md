@@ -7,6 +7,24 @@ The version string lives in one place — `rekounts/__init__.py` — and
 everything else (`pyproject.toml`, the `.exe` file properties) reads it from
 there.
 
+## Unreleased
+
+### Mac compatibility and verification
+
+- Target Apple Silicon and Intel on macOS 13+, with pinned native speech
+  dependencies and separate app builds and Cocoa smoke checks in CI.
+- Fix Command/Control hotkey capture, pill transitions stealing focus, and
+  accidental migration of a source checkout into the user data folder.
+- Add a Permissions window with live statuses, system prompts and Settings
+  links. Denied Accessibility no longer counts as a successful paste.
+- Restore an initially empty Mac clipboard and keep emoji within Quartz's
+  UTF-16 chunk limit. Bundle certificate roots for downloads and update checks.
+- Activate windows opened from the menu bar, add standard Scratchpad formatting
+  shortcuts, and allow quitting while the note is open without losing it.
+
+Mac support remains experimental pending the hardware checklist and a signed,
+notarized release. No public Mac download is announced by these changes.
+
 ## [0.4.3] — 2026-07-28
 
 ### Fixed: dictations turned into rows of dots in Notepad

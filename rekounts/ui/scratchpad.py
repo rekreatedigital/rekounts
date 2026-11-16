@@ -451,6 +451,15 @@ class Scratchpad(QtWidgets.QWidget):
         self.format_buttons["strike"].toggled.connect(self._apply_strike)
         self.format_buttons["bullets"].toggled.connect(self._apply_bullets)
 
+        # StandardKey follows the host platform (Cmd on Mac, Ctrl on Windows).
+        for kind, key in (("bold", QtGui.QKeySequence.Bold),
+                          ("italic", QtGui.QKeySequence.Italic),
+                          ("underline", QtGui.QKeySequence.Underline)):
+            shortcut = QtGui.QShortcut(QtGui.QKeySequence(key), self)
+            shortcut.activated.connect(self.format_buttons[kind].toggle)
+        close_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Close, self)
+        close_shortcut.activated.connect(self.close)
+
         self.edit.textChanged.connect(self._schedule_save)
         self.edit.currentCharFormatChanged.connect(lambda _f: self._sync_buttons())
         self.edit.cursorPositionChanged.connect(self._sync_buttons)
@@ -662,12 +671,8 @@ class Scratchpad(QtWidgets.QWidget):
         if cmd == "open":
             if not self._enabled:
                 return
-            if self.isMinimized():
-                self.showNormal()
-            else:
-                self.show()
-            self.raise_()
-            self.activateWindow()
+            from rekounts.ui.window_utils import show_and_activate
+            show_and_activate(self)
             self.edit.setFocus()
 
     @QtCore.Slot(str)
@@ -861,12 +866,11 @@ class Scratchpad(QtWidgets.QWidget):
     def closeEvent(self, e):
         """Closing hides; it never quits the app and never discards the note.
 
-        The pad is a tray-opened accessory, not a document window — and the app
-        runs with quitOnLastWindowClosed(False), so a real close here would just
-        destroy the widget the tray still holds a reference to.
+        With WA_DeleteOnClose off (the default), accepting a close just hides
+        the widget. Ignoring it also vetoes QApplication.quit() on macOS.
         """
         self.flush()
-        e.ignore()
+        e.accept()
         self.hide()
 
     def changeEvent(self, e):

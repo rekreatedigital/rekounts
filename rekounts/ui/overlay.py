@@ -72,6 +72,30 @@ def _apply_mac_tool_window_attr(widget):
         widget.setAttribute(attr, True)
 
 
+def _mac_window(widget):
+    """Resolve a real Cocoa window, never an offscreen Qt test handle."""
+    if sys.platform != "darwin" or QtGui.QGuiApplication.platformName() != "cocoa":
+        return None
+    import ctypes
+    import objc
+    view = objc.objc_object(c_void_p=ctypes.c_void_p(int(widget.winId())))
+    return view.window()
+
+
+def _raise_without_activation(widget):
+    if sys.platform != "darwin":
+        widget.raise_()
+        return
+    # Qt's Cocoa raise() can activate the process even for a non-focusable
+    # widget. Ordering the panel directly preserves the user's paste target.
+    try:
+        window = _mac_window(widget)
+        if window is not None:
+            window.orderFrontRegardless()
+    except Exception:
+        pass  # remaining visible at its existing level is safer than taking focus
+
+
 def _apply_mac_panel_behavior(widget):
     """Layers 2-3: native NSWindow/NSPanel state, flag-guarded, best-effort.
 
@@ -86,13 +110,7 @@ def _apply_mac_panel_behavior(widget):
         # Only when Qt is actually driving Cocoa windows. Under the offscreen
         # platform (tests, CI) winId() is NOT an NSView pointer, and wrapping
         # it as one is a segfault, not an exception — no try/except saves us.
-        if QtGui.QGuiApplication.platformName() != "cocoa":
-            return
-        import ctypes
-
-        import objc
-        view = objc.objc_object(c_void_p=ctypes.c_void_p(int(widget.winId())))
-        window = view.window()
+        window = _mac_window(widget)
         if window is None:
             return
         try:
@@ -304,7 +322,7 @@ class Overlay(QtWidgets.QWidget):
         self._refresh_opacity()
         if not self.isVisible():
             self.show()
-        self.raise_()
+        _raise_without_activation(self)
         if not self._follow.isActive():
             self._follow.start()
         self.update()

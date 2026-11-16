@@ -18,7 +18,7 @@ _INSERT_FAILURE_TOKENS = frozenset({
     "failed", "failure", "error", "skipped", "none", "", "0",
     # UIPI: the target window is elevated and rejected the injection — the text
     # never landed, so it must count as not-inserted (history is the safety net).
-    "blocked",
+    "blocked", "permission_denied",
     # Keystroke delivery stopped part-way because a physical modifier stayed
     # held. Some of the text may have landed, but not the message, so the user
     # gets a notice pointing at History rather than a silent half-sentence.

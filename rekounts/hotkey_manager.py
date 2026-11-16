@@ -110,7 +110,7 @@ def is_valid_hotkey(hotkey: str) -> bool:
         return False
 
 
-def hotkey_warning(hotkey):
+def hotkey_warning(hotkey, platform=None):
     """Return a human warning if ``hotkey`` is *legal but a bad idea*, else None.
 
     We deliberately do not suppress key events — suppressing a global hotkey
@@ -127,6 +127,11 @@ def hotkey_warning(hotkey):
     to warn at capture time without importing any of the listener machinery.
     """
     tokens = [t.strip().lower() for t in (hotkey or "").split("+") if t.strip()]
+    mac = (platform if platform is not None else sys.platform) == "darwin"
+    if mac and any(t.startswith("f") and t[1:].isdigit() for t in tokens):
+        return ("MacBook function keys usually control brightness or media. "
+                "Enable standard F1, F2, etc. keys in System Settings → Keyboard, "
+                "or use Ctrl+Cmd for dictation.")
     if len(tokens) != 2:
         return None
     mods = [t for t in tokens if t in _MODIFIER_ALIASES]
@@ -141,12 +146,16 @@ def hotkey_warning(hotkey):
     # it just names the modifiers the way the user's OS does ("Win" is the
     # Command key on a Mac, and "Alt" is Option).
     from rekounts.ui.platform_text import modifier_names, pretty_hotkey
-    names = modifier_names()
+    names = modifier_names(platform)
     combo = f"{names.get(mods[0], mods[0].title())}+{key.upper()}"
-    safe = pretty_hotkey("ctrl+win").replace(" ", "")
+    safe = pretty_hotkey("ctrl+win", platform).replace(" ", "")
+    if mac and _MODIFIER_ALIASES[mods[0]] == "alt":
+        return ("Option with a letter or digit can type a symbol into the focused "
+                "app. Rekounts does not block those keys. Use Ctrl+Cmd instead.")
+    safer = safe if mac else f"An F-key or {safe}"
     return (f"Heads-up: {combo} is also a common app shortcut. Rekounts does "
             f"not block it, so using it to dictate will ALSO trigger "
-            f"{combo} in whatever window has focus. An F-key or {safe} is safer.")
+            f"{combo} in whatever window has focus. {safer} is safer.")
 
 
 # --- key identity --------------------------------------------------------

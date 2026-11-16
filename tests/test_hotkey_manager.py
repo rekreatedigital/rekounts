@@ -259,11 +259,18 @@ def test_safe_hotkeys_are_not_flagged():
     # The default, F-keys and two-modifier combos collide with essentially
     # nothing, so they must stay silent.
     assert hotkey_warning("ctrl+win") is None
-    assert hotkey_warning("f8") is None
+    assert hotkey_warning("f8", platform="win32") is None
     assert hotkey_warning("ctrl+shift+a") is None
     assert hotkey_warning("ctrl+alt+space") is None
     assert hotkey_warning("") is None
     assert hotkey_warning(None) is None
+
+
+def test_mac_hotkey_warnings_account_for_media_keys_and_option_symbols():
+    assert "function keys" in hotkey_warning("f8", platform="darwin")
+    assert "symbol" in hotkey_warning("option+d", platform="darwin")
+    assert "F-key" not in hotkey_warning("cmd+a", platform="darwin")
+    assert hotkey_warning("ctrl+win", platform="darwin") is None
 
 
 # --- listener lifecycle: rebuild preserves state; stop tears it all down ----

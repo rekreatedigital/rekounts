@@ -32,15 +32,30 @@ def test_non_darwin_fallback_is_home(monkeypatch, tmp_path):
     assert paths.app_data_dir() == tmp_path / "Rekounts"
 
 
-def test_darwin_legacy_is_the_old_portable_fallback(monkeypatch, tmp_path):
-    """The pre-port fallback (~/Rekounts) is what a from-source mac user had;
-    the TalkativeAI name never shipped on macOS."""
+def test_darwin_has_no_legacy_install_to_migrate(monkeypatch, tmp_path):
+    """~/Rekounts can be the source checkout on a case-insensitive Mac disk."""
     monkeypatch.delenv("APPDATA", raising=False)
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
-    assert paths.legacy_app_data_dir() == tmp_path / "Rekounts"
-    # And it differs from the new home, so migrate.needs_migration can fire.
-    assert paths.legacy_app_data_dir() != paths.app_data_dir()
+    assert paths.legacy_app_data_dir() is None
+
+
+def test_mac_first_launch_does_not_copy_or_move_the_checkout(monkeypatch, tmp_path):
+    from rekounts.migrate import migrate_app_data
+
+    monkeypatch.delenv("APPDATA", raising=False)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+    checkout = tmp_path / "Rekounts"
+    for name in (".git", ".venv", "models"):
+        (checkout / name).mkdir(parents=True)
+        (checkout / name / "keep").write_text("source checkout")
+
+    result = migrate_app_data()
+
+    assert not result.attempted
+    assert not paths.app_data_dir().exists()
+    assert (checkout / "models" / "keep").read_text() == "source checkout"
 
 
 def test_windows_legacy_is_the_old_name(monkeypatch, tmp_path):

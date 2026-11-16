@@ -234,7 +234,8 @@ def test_hand_edited_volume_is_shown_as_the_nearest_level(
 
 # =============================================================== hotkey (wave 1)
 def test_capture_commits_a_valid_combo_and_persists_it(page, cfg):
-    _press(page.hotkey, QtCore.Qt.Key_Control)
+    from rekounts.ui.platform_text import is_mac
+    _press(page.hotkey, QtCore.Qt.Key_Meta if is_mac() else QtCore.Qt.Key_Control)
     _press(page.hotkey, QtCore.Qt.Key_Alt)
     _press(page.hotkey, QtCore.Qt.Key_F9)
     _release(page.hotkey, QtCore.Qt.Key_F9)
@@ -294,14 +295,25 @@ def test_compose_orders_modifiers_canonically():
 
 
 def test_qt_event_to_token_maps_modifiers_letters_and_function_keys(app):
+    from rekounts.ui.platform_text import is_mac
     assert _qt_event_to_token(_key_event(QtCore.QEvent.KeyPress,
-                                         QtCore.Qt.Key_Meta)) == "win"
+                                         QtCore.Qt.Key_Meta)) == ("ctrl" if is_mac() else "win")
     assert _qt_event_to_token(_key_event(QtCore.QEvent.KeyPress,
                                          QtCore.Qt.Key_K)) == "k"
     assert _qt_event_to_token(_key_event(QtCore.QEvent.KeyPress,
                                          QtCore.Qt.Key_F8)) == "f8"
     assert _qt_event_to_token(_key_event(QtCore.QEvent.KeyPress,
                                          QtCore.Qt.Key_Escape)) is None
+
+
+@pytest.mark.parametrize("key,expected", [
+    (QtCore.Qt.Key_Control, "win"),
+    (QtCore.Qt.Key_Meta, "ctrl"),
+    (QtCore.Qt.Key_Alt, "alt"),
+])
+def test_mac_capture_uses_physical_modifier_names(app, monkeypatch, key, expected):
+    monkeypatch.setattr("rekounts.ui.platform_text.is_mac", lambda *a: True)
+    assert _qt_event_to_token(_key_event(QtCore.QEvent.KeyPress, key)) == expected
 
 
 def test_hotkey_changed_signal_only_fires_on_a_real_change(page):

@@ -75,13 +75,12 @@ model you are adding; `--dry-run` does everything except upload.
 .venv\Scripts\python -m pytest        :: 1,300+ unit tests
 ```
 
-CI installs `requirements-test.txt` (a much smaller set than the runtime
-`requirements.txt`) and runs the suite on Windows (Python 3.11 and 3.12) plus
-`ruff check .`; both are quick enough to run locally the same way. The suite
-also runs on Linux and macOS in CI — the app itself is Windows-only, but the
-tests fake the Windows-specific pieces, and keeping them green off-Windows
-protects the seam a future macOS port will use. Hardware- and UI-dependent
-behavior is covered by
+CI installs `requirements-test.txt` for Windows (Python 3.11 and 3.12), Linux
+and the lightweight Mac test job, and runs `ruff check .`. Two additional Mac
+jobs install the full runtime and build native apps for Apple Silicon and Intel,
+with Cocoa and speech-engine smoke checks from source and inside the bundle.
+See [Mac packaging](macos-packaging.md). Hardware- and UI-dependent
+behavior is covered by [the Mac checklist](../MACOS-TESTING.md) and
 [docs/manual-smoke-test.md](manual-smoke-test.md). See
 [ARCHITECTURE.md](../ARCHITECTURE.md) for the module map and data flow.
 

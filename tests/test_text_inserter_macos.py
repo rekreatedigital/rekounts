@@ -14,6 +14,7 @@ from rekounts.text_inserter import (
     TextInserter,
     _MacBackend,
 )
+import pytest
 
 
 # --- fakes -------------------------------------------------------------------
@@ -133,7 +134,7 @@ def make_backend(pid=4242):
     ak.NSWorkspace = type("NSWS", (), {
         "sharedWorkspace": staticmethod(lambda: type("WS", (), {
             "frontmostApplication": staticmethod(lambda: ak._front)})())})
-    return _MacBackend(quartz=q, appkit=ak), q, pb
+    return _MacBackend(quartz=q, appkit=ak, accessibility=lambda: True), q, pb
 
 
 # --- backend primitives --------------------------------------------------------
@@ -181,6 +182,39 @@ def test_clipboard_backup_and_restore_round_trip():
     restored = pb._items[0]
     assert restored.dataForType_("public.utf8-plain-text") == "keep me"
     assert restored.dataForType_("public.rtf") == b"rtf-bytes"
+
+
+def test_an_originally_empty_mac_clipboard_stays_empty_after_dictation():
+    backend, _, pb = make_backend()
+    assert not pb.pasteboardItems()
+    assert TextInserter(backend=backend, restore_delay=0).insert("hello") == InsertResult.PASTED
+    assert not pb.pasteboardItems()
+
+
+def test_unicode_chunks_respect_utf16_limit_without_losing_emoji():
+    backend, quartz, _ = make_backend()
+    text = "é😀" * 23
+    backend.type_unicode(text)
+    chunks = [e.unicode for e in quartz.posted if e.down]
+    assert "".join(chunk for _, chunk in chunks) == text
+    assert all(units <= 20 for units, _ in chunks)
+
+
+@pytest.mark.parametrize("mode,long_paste", [("paste", True), ("keystroke", True),
+                                            ("keystroke", False)])
+def test_denied_accessibility_never_claims_delivery_or_changes_clipboard(mode, long_paste):
+    backend, quartz, pb = make_backend()
+    backend.insertion_permission = lambda: False
+    pb._items = [FakePasteboardItem({"public.rtf": b"original"})]
+    before = pb.changeCount()
+    notices = []
+    inserter = TextInserter(mode=mode, backend=backend, restore_delay=0,
+                           long_text_via_paste=long_paste, on_notice=notices.append)
+    result = inserter.insert("keep this in history")
+    assert str(result) == "permission_denied"
+    assert quartz.posted == []
+    assert pb.changeCount() == before
+    assert len(notices) == 1 and "Accessibility" in notices[0]
 
 
 def test_type_unicode_chunks_and_sends_return_for_newlines():

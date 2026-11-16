@@ -248,5 +248,7 @@ class FeedbackDialog(QtWidgets.QDialog):
 def show_feedback(config=None, parent=None):
     """Open the dialog modally. The one entry point the tray and Hub call."""
     dialog = FeedbackDialog(config, parent)
+    from rekounts.ui.window_utils import activate_application
+    activate_application()
     dialog.exec()
     return dialog

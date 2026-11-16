@@ -187,6 +187,12 @@ def test_closing_hides_rather_than_destroying(pad):
     assert pad.edit is not None
 
 
+def test_close_accepts_the_event_so_application_quit_is_not_cancelled(pad):
+    event = QtGui.QCloseEvent()
+    pad.closeEvent(event)
+    assert event.isAccepted()
+
+
 # --------------------------------------------------------------- formatting
 def test_bold_applies_to_what_is_typed_next(pad):
     pad.format_buttons["bold"].setChecked(True)

@@ -443,7 +443,10 @@ def github(monkeypatch):
         body = None
         requests = []
 
-        def urlopen(self, req, timeout=None):
+        contexts = []
+
+        def urlopen(self, req, timeout=None, context=None):
+            self.contexts.append(context)
             self.requests.append(req)
             if self.error:
                 raise self.error

@@ -539,6 +539,8 @@ class Dashboard(QtWidgets.QWidget):
         self.config = config
         self.setObjectName("DashRoot")
         self.setWindowTitle("Rekounts")
+        close_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Close, self)
+        close_shortcut.activated.connect(self.close)
         # Explicit, rather than relying on QApplication's default: the Hub is
         # also opened standalone by tools/demos that never set an app-wide icon.
         self.setWindowIcon(app_icon())
@@ -624,9 +626,8 @@ class Dashboard(QtWidgets.QWidget):
 
     def open_and_raise(self):
         """Bring the Hub to the front (used by the tray 'Open' action)."""
-        self.show()
-        self.raise_()
-        self.activateWindow()
+        from rekounts.ui.window_utils import show_and_activate
+        show_and_activate(self)
 
     def open_settings(self):
         """Open the Hub on the Settings page (the tray's 'Settings…' action)."""
