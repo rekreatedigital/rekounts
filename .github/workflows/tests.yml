@@ -132,7 +132,7 @@ jobs:
             arch: x86_64
     env:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
-      APPDATA: ${{ runner.temp }}/rekounts-mac-smoke
+      APPDATA: ${{ github.workspace }}/build/macos-smoke-data
     steps:
       - uses: actions/checkout@v4
 
@@ -174,7 +174,7 @@ jobs:
         run: >-
           python -m rekounts --mac-smoke-test
           --model-dir "$APPDATA/Rekounts/models/base"
-          --report build/macos-source-smoke.json
+          --report "$GITHUB_WORKSPACE/build/macos-source-smoke.json"
 
       - name: Build the Mac app
         run: |
@@ -193,7 +193,7 @@ jobs:
         run: >-
           dist/Rekounts.app/Contents/MacOS/Rekounts --mac-smoke-test
           --model-dir "$APPDATA/Rekounts/models/base"
-          --report build/macos-bundle-smoke.json
+          --report "$GITHUB_WORKSPACE/build/macos-bundle-smoke.json"
 
       - name: Archive the test app with symlinks intact
         run: >-
