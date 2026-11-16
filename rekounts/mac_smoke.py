@@ -48,11 +48,7 @@ def run(model_dir: Path, audio_file: Path, *, allow_unavailable_desktop=False) -
     assert callable(Quartz.CGRequestListenEventAccess)
     assert AVFoundation.AVMediaTypeAudio
 
-    from PySide6 import QtGui, QtWidgets
-    from rekounts.scratchpad_store import ScratchpadStore
-    from rekounts.ui.overlay import Overlay, _mac_window
-    from rekounts.ui.scratchpad import Scratchpad, ScratchpadRouter
-    from rekounts.ui.permissions_dialog import PermissionsDialog
+    from PySide6 import QtCore, QtGui, QtWidgets
     from rekounts.ui.branding import app_icon
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
@@ -77,6 +73,34 @@ def run(model_dir: Path, audio_file: Path, *, allow_unavailable_desktop=False) -
         "not_tested": ["real microphone", "granted global hotkey", "paste into other apps",
                        "login", "Spaces and full-screen apps", "Gatekeeper"],
     }
+
+    failures = []
+
+    def check_windows():
+        try:
+            _check_windows(app, report, allow_unavailable_desktop)
+        except Exception as error:
+            failures.append(error)
+        finally:
+            app.quit()
+
+    # Cocoa's applicationDidFinishLaunching/activation must finish before the
+    # external-focus precondition. processEvents() alone can activate Python
+    # belatedly and make a healthy desktop look unavailable. Match production's
+    # real Qt event loop and perform checks after its startup events.
+    QtCore.QTimer.singleShot(250, check_windows)
+    app.exec()
+    if failures:
+        raise failures[0]
+    return report
+
+
+def _check_windows(app, report, allow_unavailable_desktop):
+    import AppKit
+    from rekounts.scratchpad_store import ScratchpadStore
+    from rekounts.ui.overlay import Overlay, _mac_window
+    from rekounts.ui.scratchpad import Scratchpad, ScratchpadRouter
+    from rekounts.ui.permissions_dialog import PermissionsDialog
 
     def wait_for(predicate, message, timeout=5):
         deadline = time.monotonic() + timeout
