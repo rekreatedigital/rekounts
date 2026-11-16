@@ -11,6 +11,7 @@ import platform
 import plistlib
 import subprocess
 import tempfile
+import time
 
 from tools.check_macos_bundle import check_bundle
 
@@ -59,6 +60,26 @@ def run(*args: str | Path) -> None:
     subprocess.run([str(arg) for arg in args], check=True)
 
 
+def run_hdiutil(*args: str | Path) -> None:
+    """Retry only the intermittent disk-image EBUSY error, at most five times."""
+    command = ["hdiutil", *map(str, args)]
+    for attempt in range(5):
+        # A file avoids the diskimages-helper pipe hang described by create-dmg:
+        # https://github.com/create-dmg/create-dmg/blob/master/create-dmg
+        with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as log:
+            result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=180)
+            log.seek(0)
+            output = log.read()
+        print(output, end="", flush=True)
+        if result.returncode == 0:
+            return
+        if "Resource busy" not in output or attempt == 4:
+            raise subprocess.CalledProcessError(result.returncode, command, output=output)
+        delay = 2 ** (attempt + 1)
+        print(f"Disk image resource busy; retrying in {delay}s ({attempt + 2}/5).", flush=True)
+        time.sleep(delay)
+
+
 def package_preview(bundle: Path, output_dir: Path) -> Path:
     if platform.system() != "Darwin":
         raise RuntimeError("Build Mac disk images on macOS.")
@@ -86,8 +107,9 @@ def package_preview(bundle: Path, output_dir: Path) -> Path:
         os.symlink("/Applications", stage / "Applications")
         (stage / "INSTALL.txt").write_text(installation_notes(arch), encoding="utf-8")
         dmg = work / output.name
-        run("hdiutil", "create", "-volname", "Rekounts Preview", "-srcfolder",
-            stage, "-format", "UDZO", "-fs", "HFS+", dmg)
+        # -ov only applies to our own temporary image if a failed attempt left it.
+        run_hdiutil("create", "-ov", "-volname", "Rekounts Preview", "-srcfolder",
+                    stage, "-format", "UDZO", "-fs", "HFS+", dmg)
         run("hdiutil", "verify", dmg)
         mount = work / "mounted"
         mount.mkdir()
@@ -107,7 +129,7 @@ def package_preview(bundle: Path, output_dir: Path) -> Path:
             with (installed / "Contents" / "Info.plist").open("rb") as stream:
                 version = plistlib.load(stream)["CFBundleShortVersionString"]
         finally:
-            run("hdiutil", "detach", mount)
+            run_hdiutil("detach", mount)
         # Copy only after the disk image has passed all checks.
         run("ditto", dmg, output)
     with output.open("rb") as stream:

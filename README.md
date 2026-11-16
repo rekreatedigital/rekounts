@@ -15,7 +15,8 @@ to make, and it's free — not a trial, not a "Pro" tier waiting for you later.
 
 > Windows 10/11 is the published download. Mac support targets Apple Silicon
 > and Intel on macOS 13+, but remains experimental pending hands-on testing.
-> [Start here](docs/macos-quickstart.md) for source setup and CI test builds.
+> [Try the free Mac preview](docs/macos-preview.md), or
+> [start here](docs/macos-quickstart.md) for source setup and CI test builds.
 > No Linux version.
 
 While you're talking, the only thing on screen is a small pill above your
@@ -155,8 +156,8 @@ dictated.
   lives.
 - **[Privacy](docs/privacy.md)** — what's stored, and every moment it touches
   the network.
-- **[Running on macOS](docs/macos.md)** — what's built, what's unknown, and why
-  there's no Mac download. The friendly version is
+- **[Running on macOS](docs/macos.md)** — what's built, what's unknown, and
+  what still needs hands-on testing. The friendly version is
   **[the quickstart](docs/macos-quickstart.md)**.
 - **[Building from source](docs/building.md)** — running it yourself, the tests,
   and packaging the app.
