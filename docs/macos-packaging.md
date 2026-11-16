@@ -39,6 +39,10 @@ QT_QPA_PLATFORM=cocoa dist/Rekounts.app/Contents/MacOS/Rekounts \
 The check activates Finder and test windows, loads the model, and verifies
 overlay focus and Scratchpad routing. It does not record audio, request access,
 start a global listener or send keystrokes. Use it in a desktop session.
+The command above requires the desktop checks. CI adds
+`--allow-unavailable-desktop`: if Finder cannot be activated, reports explicitly
+list window checks as untested while model and packaging verification continue.
+It does not suppress a Rekounts window failure on an available desktop.
 
 For a manual test, move the app to `/Applications` before opening it. Follow
 [Apple's current Gatekeeper guidance](https://support.apple.com/en-us/102445)

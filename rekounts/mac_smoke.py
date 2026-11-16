@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
+import subprocess
 import sys
 import tempfile
 import time
@@ -15,7 +17,7 @@ import traceback
 from pathlib import Path
 
 
-def run(model_dir: Path) -> dict:
+def run(model_dir: Path, *, allow_unavailable_desktop=False) -> dict:
     if sys.platform != "darwin":
         raise RuntimeError("The native smoke check requires macOS.")
     if not model_dir.is_dir():
@@ -60,6 +62,17 @@ def run(model_dir: Path) -> dict:
         AppKit.NSApplicationActivationPolicyAccessory)
     assert not app_icon().isNull()
 
+    report = {
+        "status": "passed", "architecture": platform.machine(),
+        "macos": platform.mac_ver()[0], "frozen": bool(getattr(sys, "frozen", False)),
+        "model_load_seconds": round(load_seconds, 3),
+        "silence_inference_seconds": round(inference_seconds, 3),
+        "checks": ["speech engine and VAD", "bundled TLS roots", "native frameworks",
+                   "Cocoa plugin"],
+        "not_tested": ["real microphone", "granted global hotkey", "paste into other apps",
+                       "login", "Spaces and full-screen apps", "Gatekeeper"],
+    }
+
     def wait_for(predicate, message, timeout=5):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -73,13 +86,34 @@ def run(model_dir: Path) -> dict:
         front = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
         return int(front.processIdentifier()) if front else None
 
+    # LaunchServices can activate an app where activateWithOptions alone cannot
+    # on newer macOS. This changes focus only, never synthesizes user input.
+    subprocess.run(["/usr/bin/open", "-a", "Finder"], check=True,
+                   capture_output=True, timeout=10)
     finders = AppKit.NSRunningApplication.runningApplicationsWithBundleIdentifier_(
         "com.apple.finder")
     assert finders, "Finder must be running in the CI desktop session."
     finder = finders[0]
     finder.activateWithOptions_(AppKit.NSApplicationActivateIgnoringOtherApps)
     finder_pid = int(finder.processIdentifier())
-    wait_for(lambda: front_pid() == finder_pid, "Could not activate Finder.")
+    try:
+        wait_for(lambda: front_pid() == finder_pid, "Could not activate Finder.")
+    except AssertionError:
+        # An unattended/locked runner cannot establish our external focus
+        # precondition. Do not turn this into a passing focus test. CI may
+        # continue packaging only with an explicit report of the missing check.
+        if not allow_unavailable_desktop:
+            raise
+        report["status"] = "passed_noninteractive_checks"
+        report["desktop"] = {
+            "status": "unavailable", "reason": "Finder could not become frontmost",
+            "frontmost_pid": front_pid(), "finder_pid": finder_pid,
+            "process_pid": os.getpid(),
+        }
+        report["not_tested"].extend([
+            "nonactivating overlay", "accessory Scratchpad focus and routing",
+            "Scratchpad close and reopen", "permissions window on Cocoa"])
+        return report
 
     pill = Overlay()
     try:
@@ -128,26 +162,23 @@ def run(model_dir: Path) -> dict:
         pill.deleteLater()
         app.processEvents()
 
-    return {
-        "status": "passed", "architecture": platform.machine(),
-        "macos": platform.mac_ver()[0], "frozen": bool(getattr(sys, "frozen", False)),
-        "model_load_seconds": round(load_seconds, 3),
-        "silence_inference_seconds": round(inference_seconds, 3),
-        "checks": ["speech engine and VAD", "bundled TLS roots", "native frameworks",
-                   "nonactivating overlay", "accessory Scratchpad focus and routing",
-                   "Scratchpad close and reopen", "permissions window"],
-        "not_tested": ["real microphone", "granted global hotkey", "paste into other apps",
-                       "login", "Spaces and full-screen apps", "Gatekeeper"],
-    }
+    report["desktop"] = {"status": "passed"}
+    report["checks"].extend([
+        "nonactivating overlay", "accessory Scratchpad focus and routing",
+        "Scratchpad close and reopen", "permissions window"])
+    return report
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model-dir", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--allow-unavailable-desktop", action="store_true",
+                        help="Report unavailable desktop checks without failing the build")
     args = parser.parse_args(argv)
     try:
-        report = run(args.model_dir.resolve())
+        report = run(args.model_dir.resolve(),
+                     allow_unavailable_desktop=args.allow_unavailable_desktop)
         code = 0
     except Exception:
         report = {"status": "failed", "error": traceback.format_exc()}
@@ -156,5 +187,7 @@ def main(argv=None) -> int:
     args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     # A windowed PyInstaller app may have no stdout. The report is authoritative.
     if sys.stdout is not None:
+        if report.get("desktop", {}).get("status") == "unavailable":
+            print("::warning::Desktop focus checks unavailable; a real Mac test is required.")
         print(json.dumps(report, indent=2))
     return code

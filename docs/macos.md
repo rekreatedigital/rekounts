@@ -34,7 +34,11 @@ These are development artifacts, not notarized releases.
 - Construct the permission window and check the bundled native frameworks.
 
 The checks never open the microphone, request permissions, post keyboard events
-or upload audio. A green run still needs the hands-on checklist.
+or upload audio. An unattended runner may not allow Finder to become active.
+CI explicitly permits that precondition to be unavailable so packaging can
+continue; its JSON reports then say `passed_noninteractive_checks` and list
+the untested window behavior. A product assertion still fails the job once the
+desktop precondition succeeds. A green run still needs the hands-on checklist.
 
 ## Mac behavior
 

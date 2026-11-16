@@ -178,6 +178,7 @@ jobs:
           QT_QPA_PLATFORM: cocoa
         run: >-
           python -m rekounts --mac-smoke-test
+          --allow-unavailable-desktop
           --model-dir "$APPDATA/Rekounts/models/base"
           --report "$GITHUB_WORKSPACE/build/macos-source-smoke.json"
 
@@ -197,6 +198,7 @@ jobs:
           QT_QPA_PLATFORM: cocoa
         run: >-
           dist/Rekounts.app/Contents/MacOS/Rekounts --mac-smoke-test
+          --allow-unavailable-desktop
           --model-dir "$APPDATA/Rekounts/models/base"
           --report "$GITHUB_WORKSPACE/build/macos-bundle-smoke.json"
 
