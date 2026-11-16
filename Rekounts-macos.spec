@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for Rekounts on macOS (groundwork — NOT yet verified on
-real hardware; see MACOS-TESTING.md and docs/macos-packaging.md).
+"""Native Mac app build, exercised by CI for both processor architectures.
+Hands-on acceptance remains in MACOS-TESTING.md; see docs/macos-packaging.md.
 
 Produces dist/Rekounts.app — a menu-bar (tray) app with no Dock icon:
 
@@ -18,9 +18,9 @@ app preserves this because it runs the same __main__.py.
 
 Build (on a Mac):  .venv/bin/python -m PyInstaller --clean Rekounts-macos.spec
 
-Signing/notarization are deliberately NOT attempted here — they need the
-owner's Apple Developer account. The full procedure is documented in
-docs/macos-packaging.md.
+PyInstaller ad-hoc signs development builds. REKOUNTS_MAC_SIGNING_IDENTITY
+opts into the owner's Developer ID certificate; notarization stays a separate
+step documented in docs/macos-packaging.md.
 """
 import os
 import re

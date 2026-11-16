@@ -17,7 +17,7 @@ For setup, use the [quickstart](macos-quickstart.md). For packaging, use
 ## What the automated checks cover
 
 The [tests workflow](../.github/workflows/tests.yml) has independent
-`macos-15` (Apple Silicon) and `macos-15-intel` jobs. Each installs the full
+`macos-26` (Apple Silicon) and `macos-15-intel` jobs. Each installs the full
 runtime, runs the suite against real PyObjC frameworks, builds a native `.app`,
 and checks the bundle's architecture, metadata, certificate bundle and ad-hoc
 signature. Each successful job publishes a test ZIP as an Actions artifact.
@@ -25,8 +25,9 @@ These are development artifacts, not notarized releases.
 
 `python -m rekounts --mac-smoke-test` and the same command inside the bundle:
 
-- Load a local speech model before Qt and run the speech engine and VAD on
-  generated silence. This checks integration, not speech accuracy or speed.
+- Load a local speech model before Qt and transcribe faster-whisper's JFK test
+  clip, checking expected words. This exercises decoding and VAD, not a general
+  speech-accuracy or speed benchmark.
 - Use the real Cocoa window server to check that the recording pill leaves
   Finder active through idle, recording and processing transitions.
 - Activate the Scratchpad under the accessory-app policy, route text into it,

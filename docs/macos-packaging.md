@@ -4,7 +4,8 @@ Build separately for **Apple Silicon (`arm64`)** and **Intel (`x86_64`)** on a
 Mac of the matching architecture. `target_arch=None` selects the host
 architecture; it does not produce a universal app. Both builds target macOS 13
 or later because of the pinned ONNX Runtime wheels. Native CI currently runs
-on macOS 15; older deployment versions still need hardware testing.
+on macOS 15 (Intel) and 26 (Apple Silicon); older deployment versions still
+need hardware testing.
 
 ## Development build
 
@@ -30,9 +31,13 @@ bundle symlinks survive. It runs this native check from source and in the app:
 
 ```sh
 python -c "from rekounts.models import ensure_model; ensure_model('base')"
+mkdir -p build
+curl --fail --location --output build/mac-smoke-jfk.flac \
+  https://raw.githubusercontent.com/SYSTRAN/faster-whisper/v1.0.3/tests/data/jfk.flac
 QT_QPA_PLATFORM=cocoa dist/Rekounts.app/Contents/MacOS/Rekounts \
   --mac-smoke-test \
   --model-dir "$HOME/Library/Application Support/Rekounts/models/base" \
+  --audio-file build/mac-smoke-jfk.flac \
   --report build/macos-bundle-smoke.json
 ```
 

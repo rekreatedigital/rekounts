@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import tempfile
@@ -17,7 +18,7 @@ import traceback
 from pathlib import Path
 
 
-def run(model_dir: Path, *, allow_unavailable_desktop=False) -> dict:
+def run(model_dir: Path, audio_file: Path, *, allow_unavailable_desktop=False) -> dict:
     if sys.platform != "darwin":
         raise RuntimeError("The native smoke check requires macOS.")
     if not model_dir.is_dir():
@@ -28,10 +29,12 @@ def run(model_dir: Path, *, allow_unavailable_desktop=False) -> dict:
     started = time.monotonic()
     transcriber = Transcriber(str(model_dir), "cpu", "en")
     load_seconds = time.monotonic() - started
-    import numpy as np
+    from faster_whisper.audio import decode_audio
+    audio = decode_audio(str(audio_file), sampling_rate=16000)
     started = time.monotonic()
-    result = transcriber.transcribe(np.zeros(32000, dtype=np.float32))
-    assert isinstance(result, str)
+    result = transcriber.transcribe(audio)
+    words = set(re.findall(r"[a-z]+", str(result).lower()))
+    assert {"ask", "country"} <= words, "Reference speech did not produce the expected words."
     inference_seconds = time.monotonic() - started
 
     from rekounts.network import tls_context
@@ -66,7 +69,9 @@ def run(model_dir: Path, *, allow_unavailable_desktop=False) -> dict:
         "status": "passed", "architecture": platform.machine(),
         "macos": platform.mac_ver()[0], "frozen": bool(getattr(sys, "frozen", False)),
         "model_load_seconds": round(load_seconds, 3),
-        "silence_inference_seconds": round(inference_seconds, 3),
+        "reference_inference_seconds": round(inference_seconds, 3),
+        "reference_audio_seconds": round(len(audio) / 16000, 3),
+        "reference_words_matched": True,
         "checks": ["speech engine and VAD", "bundled TLS roots", "native frameworks",
                    "Cocoa plugin"],
         "not_tested": ["real microphone", "granted global hotkey", "paste into other apps",
@@ -172,12 +177,14 @@ def run(model_dir: Path, *, allow_unavailable_desktop=False) -> dict:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model-dir", type=Path, required=True)
+    parser.add_argument("--audio-file", type=Path, required=True,
+                        help="Path to faster-whisper's JFK reference speech fixture")
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--allow-unavailable-desktop", action="store_true",
                         help="Report unavailable desktop checks without failing the build")
     args = parser.parse_args(argv)
     try:
-        report = run(args.model_dir.resolve(),
+        report = run(args.model_dir.resolve(), args.audio_file.resolve(),
                      allow_unavailable_desktop=args.allow_unavailable_desktop)
         code = 0
     except Exception:

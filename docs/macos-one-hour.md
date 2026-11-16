@@ -3,7 +3,7 @@
 Use the matching Intel or Apple Silicon test app from a successful Actions run.
 Move it to `/Applications`, then follow [the quickstart](macos-quickstart.md).
 Record the chip, macOS version and build/commit before testing. The dependency
-floor is macOS 13; native CI runs on macOS 15.
+floor is macOS 13; native CI uses macOS 15 (Intel) and 26 (Apple Silicon).
 
 1. **Permissions (10 minutes).** Start without grants. Check that the setup
    window appears even with notifications off. Grant Input Monitoring,

@@ -131,7 +131,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-15
+          - os: macos-26
             arch: arm64
           - os: macos-15-intel
             arch: x86_64
@@ -171,7 +171,9 @@ jobs:
         run: python -m pytest -q
 
       - name: Fetch the smoke-test speech model
-        run: python -c "from rekounts.models import ensure_model; ensure_model('base')"
+        run: |
+          python -c "from rekounts.models import ensure_model; ensure_model('base')"
+          curl --fail --location --retry 3 --output build/mac-smoke-jfk.flac https://raw.githubusercontent.com/SYSTRAN/faster-whisper/v1.0.3/tests/data/jfk.flac
 
       - name: Native window and speech smoke check (source)
         env:
@@ -180,6 +182,7 @@ jobs:
           python -m rekounts --mac-smoke-test
           --allow-unavailable-desktop
           --model-dir "$APPDATA/Rekounts/models/base"
+          --audio-file "$GITHUB_WORKSPACE/build/mac-smoke-jfk.flac"
           --report "$GITHUB_WORKSPACE/build/macos-source-smoke.json"
 
       - name: Build the Mac app
@@ -190,7 +193,7 @@ jobs:
       - name: Verify bundle identity, architecture and signature
         run: |
           python tools/check_macos_bundle.py dist/Rekounts.app
-          lipo -verify_arch ${{ matrix.arch }} dist/Rekounts.app/Contents/MacOS/Rekounts
+          lipo dist/Rekounts.app/Contents/MacOS/Rekounts -verify_arch ${{ matrix.arch }}
           codesign --verify --deep --strict dist/Rekounts.app
 
       - name: Native window and speech smoke check (bundled)
@@ -200,6 +203,7 @@ jobs:
           dist/Rekounts.app/Contents/MacOS/Rekounts --mac-smoke-test
           --allow-unavailable-desktop
           --model-dir "$APPDATA/Rekounts/models/base"
+          --audio-file "$GITHUB_WORKSPACE/build/mac-smoke-jfk.flac"
           --report "$GITHUB_WORKSPACE/build/macos-bundle-smoke.json"
 
       - name: Archive the test app with symlinks intact

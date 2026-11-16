@@ -2,7 +2,8 @@
 
 Keep a separate result for **Apple Silicon and Intel**, and for each macOS
 version claimed as supported. The dependency floor is macOS 13; CI currently
-runs on macOS 15. A checkbox stays empty until somebody observes it on hardware.
+uses macOS 15 (Intel) and 26 (Apple Silicon). A checkbox stays empty until
+somebody observes it on hardware.
 
 Record: commit/build, chip, macOS version, keyboard layout, source or `.app`,
 microphone, date, tester. Include the CI run URL and its two smoke reports when

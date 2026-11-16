@@ -13,10 +13,10 @@ to make, and it's free — not a trial, not a "Pro" tier waiting for you later.
 **[Download for Windows](https://github.com/rekreatedigital/rekounts/releases/latest)**
 · [rekounts.com](https://rekounts.com)
 
-> Windows 10/11 is the version you download. Macs can run it from source today,
-> but it's experimental and nobody has tried it on real Mac hardware yet —
-> [start here](docs/macos-quickstart.md) if you want to be the first. No Linux
-> version.
+> Windows 10/11 is the published download. Mac support targets Apple Silicon
+> and Intel on macOS 13+, but remains experimental pending hands-on testing.
+> [Start here](docs/macos-quickstart.md) for source setup and CI test builds.
+> No Linux version.
 
 While you're talking, the only thing on screen is a small pill above your
 taskbar:
