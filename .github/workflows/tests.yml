@@ -211,6 +211,13 @@ jobs:
           ditto -c -k --keepParent dist/Rekounts.app
           dist/Rekounts-macos-${{ matrix.arch }}-test.zip
 
+      - name: Long-dictation pipeline smoke check (bundled, real-time replay)
+        run: >-
+          dist/Rekounts.app/Contents/MacOS/Rekounts --dictation-smoke-test
+          --model-dir "$APPDATA/Rekounts/models/base"
+          --audio-file "$GITHUB_WORKSPACE/build/mac-smoke-jfk.flac"
+          --report "$GITHUB_WORKSPACE/build/macos-dictation-smoke.json"
+
       - name: Build and verify a drag-to-Applications preview disk image
         run: python -m tools.package_macos_preview
 

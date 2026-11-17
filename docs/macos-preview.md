@@ -1,6 +1,6 @@
 # Install the free Mac preview
 
-Download from the [Mac preview release](https://github.com/rekreatedigital/rekounts/releases/tag/mac-preview-2026-11-17).
+Download from the [0.4.4 preview release](https://github.com/rekreatedigital/rekounts/releases/tag/v0.4.4-preview.1).
 This preview is for testing on a real Mac before a supported Mac release.
 It is not Developer ID signed or notarized by Apple. You do not need an Apple
 Developer membership or payment to try it.
@@ -51,7 +51,17 @@ For example: `M2 / macOS 15.7 / TextEdit passed / browser paste failed`.
 Avoid including private dictation. A fuller checklist is in
 [MACOS-TESTING.md](../MACOS-TESTING.md).
 
-The app currently reports version 0.4.3; identify this build by the release tag
-`mac-preview-2026-11-17` and the commit recorded on that release. The preview is
-separate from the stable Windows download. Updating an ad-hoc signed preview
-may require granting permissions again.
+The current app reports version **0.4.4**, published as `v0.4.4-preview.1`.
+It includes background preparation for longer dictations: recognition uses the
+same selected model and accuracy settings, and the complete text appears once
+you stop. See the [release notes](https://rekounts.com/preview.html#changes).
+
+To update an existing Mac installation, quit Rekounts, drag the new app into
+Applications and choose Replace, then reopen it. Settings and history stay in
+your user data folder. Updating an ad-hoc signed preview may require granting
+permissions again.
+
+This preview is separate from the stable Windows download. **Check for Updates**
+opens a release page; it does not install an update itself, and the stable update
+check does not offer prereleases. Use the [Mac download page](https://rekounts.com/mac.html)
+to get this preview.

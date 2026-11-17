@@ -212,6 +212,16 @@ class AudioRecorder:
             return np.zeros(0, dtype="float32")
         return np.concatenate(frames, axis=0).flatten()
 
+    def read_frames(self, offset: int):
+        """Snapshot new immutable capture blocks for background transcription.
+
+        Only copies references under the capture lock. Concatenation, voice
+        detection and inference happen on the worker, never in the mic callback.
+        ``stop`` still returns the complete recording for finalization/fallback.
+        """
+        with self._lock:
+            return self._frames[offset:], len(self._frames)
+
     def close(self) -> None:
         """Fully release the mic and drop all buffered audio from RAM."""
         self._close_stream()

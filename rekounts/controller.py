@@ -3,6 +3,7 @@ import threading
 import time
 
 from rekounts.audio_utils import normalize_gain
+from rekounts.incremental import BackgroundTranscription
 from rekounts.state_machine import StateMachine
 from rekounts.text_inserter import undelivered_message
 from rekounts.transcriber import is_hallucination, is_phantom_evidence
@@ -107,6 +108,9 @@ class AppController:
         self._cap_grace_deadline = None
         self.sm = StateMachine()
         self._last_state = self.sm.state.value
+        self._lifecycle_lock = threading.RLock()
+        self._background = None
+        self.last_timings = {}
 
     # --- state notification -------------------------------------------------
     def _sync_state(self):
@@ -229,6 +233,10 @@ class AppController:
 
     # --- hotkey entry points ------------------------------------------------
     def start_recording(self) -> bool:
+        with self._lifecycle_lock:
+            return self._start_recording()
+
+    def _start_recording(self) -> bool:
         """Begin a recording. Returns True only if one actually started.
 
         Returns False when the state machine refuses (we are still PROCESSING
@@ -243,10 +251,30 @@ class AppController:
             if getattr(self.recorder, "fell_back_to_default", False):
                 self.on_notice("Saved microphone not found — using system default.")
             self.recorder.start()
+            self._background = None
+            # Older/custom recorder and transcriber adapters retain the whole-
+            # clip path. The production pair provides this optional protocol.
+            if (callable(getattr(self.recorder, "read_frames", None))
+                    and callable(getattr(self.transcriber, "decode_segments", None))
+                    and getattr(self.recorder, "sample_rate", 16000) == 16000):
+                try:
+                    background = BackgroundTranscription(self.recorder, self.transcriber)
+                    background.start()
+                    self._background = background
+                except Exception as error:
+                    log.warning("Background preparation unavailable (%s)",
+                                type(error).__name__)
             self._schedule_autostop()
             self.on_overlay_show()
             return True
         except Exception as e:
+            if self._background is not None:
+                self._background.cancel()
+                self._background = None
+            try:
+                self.recorder.stop()
+            except Exception:
+                pass
             self.on_error(f"Microphone error: {e}")
             self._cancel_autostop()
             self.sm.to_idle()
@@ -254,10 +282,16 @@ class AppController:
             return False
 
     def stop_recording(self):
+        with self._lifecycle_lock:
+            self._stop_recording()
+
+    def _stop_recording(self):
         if self.sm.state.name != "RECORDING":
             return
         if not self.sm.to_processing():
             return
+        if self._background is not None:
+            self._background.stop()
         self._cancel_autostop()
         self._sync_state()
         # We have left RECORDING — resync the hotkey gesture before the (possibly
@@ -271,22 +305,24 @@ class AppController:
             self._process()
 
     def cancel_recording(self):
-        """Abort an in-progress recording: stop the mic, discard the audio, and
-        return to IDLE without transcribing or inserting. Safe to call in any
+        with self._lifecycle_lock:
+            self._cancel_recording()
+
+    def _cancel_recording(self):
+        """Abort an in-progress recording: stop the mic, discard prepared text
+        and audio, and return to IDLE without inserting. Safe to call in any
         state (no-op unless currently RECORDING).
 
-        Note: this cancels only a RECORDING, not a PROCESSING transcription. A
-        true mid-transcription cancel needs the transcriber to check a flag
-        between faster-whisper's (lazy) segments — that lives in transcriber.py,
-        which a sibling branch owns — plus a PROCESSING-state affordance on the
-        pill (overlay, another branch). It could not be delivered cleanly from
-        the controller alone: transcribe() consumes the generator internally and
-        blocks, so abandoning it here would still leave the model call running,
-        holding its lock and starving the next dictation. Deferred deliberately.
+        Note: this cancels only a RECORDING, not a PROCESSING transcription. The
+        background worker checks cancellation between decoder segments, but a
+        PROCESSING-state cancel would also need a visible affordance on the pill.
         """
         if self.sm.state.name != "RECORDING":
             return
         self._cancel_autostop()
+        if self._background is not None:
+            self._background.cancel()
+            self._background = None
         try:
             self.recorder.stop()   # discard whatever was captured
         except Exception as e:
@@ -305,18 +341,41 @@ class AppController:
 
     # --- heavy pipeline (runs off UI thread in production) ------------------
     def _process(self):
+        started = time.perf_counter()
+        background, self._background = self._background, None
         try:
             audio = self.recorder.stop()
             duration_s = self.recorder.duration(audio)
             if duration_s < self.min_seconds:
                 return
-            # Boost quiet microphones so low-gain input survives Whisper's VAD.
-            audio = normalize_gain(audio)
-            raw = self.transcriber.transcribe(audio)
+            decoding = time.perf_counter()
+            prepared_s = 0.0
+            if background is not None and background.transcriber is self.transcriber:
+                raw = background.finish(audio)
+                prepared_s = background.completed_samples / 16000
+            else:
+                if background is not None:
+                    # A model reload won mid-recording. Use it consistently.
+                    background.cancel()
+                    background.join()
+                raw = self.transcriber.transcribe(normalize_gain(audio))
+            decoded = time.perf_counter()
             self._finish_final(raw, duration_s)
+            finished = time.perf_counter()
+            self.last_timings = {
+                "audio_s": duration_s, "prepared_audio_s": prepared_s,
+                "transcribe_after_stop_s": decoded - decoding,
+                "finish_s": finished - decoded,
+                "total_after_stop_s": finished - started,
+            }
+            log.info("dictation timing audio_s=%.3f prepared_audio_s=%.3f "
+                     "transcribe_after_stop_s=%.3f finish_s=%.3f total_after_stop_s=%.3f",
+                     *self.last_timings.values())
         except Exception as e:
             self.on_error(f"Transcription failed: {e}")
         finally:
+            if background is not None:
+                background.cancel()
             self.sm.to_idle()
             self._sync_state()
 

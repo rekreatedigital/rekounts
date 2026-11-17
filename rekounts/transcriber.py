@@ -4,6 +4,7 @@ import re
 import subprocess
 import sys
 import threading
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -325,8 +326,7 @@ def strip_phantom_tail(segments):
         text = getattr(seg, "text", "") or ""
         if not is_hallucination(text):
             break
-        log.info("dropping phantom tail segment (no_speech_prob=%.3f): %r",
-                 prob, text.strip())
+        log.info("dropping phantom tail segment (no_speech_prob=%.3f)", prob)
         kept.pop()
     return [getattr(s, "text", "") for s in kept]
 
@@ -543,6 +543,17 @@ def _cuda_loads_safely(model_name: str) -> bool:
         return False
 
 
+@dataclass(frozen=True)
+class DecodeOptions:
+    language: str | None
+    beam_size: int
+    hotwords: str | None
+
+
+class TranscriptionCancelled(Exception):
+    """A discarded recording should release the model between segments."""
+
+
 class Transcriber:
     # Class-level defaults, so the live-settings providers are safe to read on
     # ANY instance — including ones built with object.__new__ (the test suites
@@ -647,14 +658,24 @@ class Transcriber:
     def transcribe(self, audio: np.ndarray) -> str:
         if audio is None or len(audio) == 0:
             return ""
-        hotwords = self._current_hotwords()
+        options = self.decode_options()
+        return self.finalize_segments(self.decode_segments(audio, options), options)
+
+    def decode_options(self):
+        return DecodeOptions(self._current_language(), self._current_beam_size(),
+                             self._current_hotwords())
+
+    def decode_segments(self, audio, options, cancel=None):
+        """Decode without treating an internal chunk as the dictation's end."""
         with self._lock:
+            if cancel is not None and cancel.is_set():
+                raise TranscriptionCancelled()
             segments, _ = self.model.transcribe(
-                audio, language=self._current_language(),
-                beam_size=self._current_beam_size(),
+                audio, language=options.language,
+                beam_size=options.beam_size,
                 # Dictionary words, biasing every window of this clip. None when
                 # the dictionary is empty, which is faster-whisper's own default.
-                hotwords=hotwords,
+                hotwords=options.hotwords,
                 # Don't feed each segment's text as context to the next. On long
                 # dictations this is faster and avoids repetition/drift as the clip grows.
                 condition_on_previous_text=False,
@@ -663,21 +684,24 @@ class Transcriber:
                 vad_filter=True,
                 vad_parameters=dict(threshold=0.3, min_silence_duration_ms=500),
             )
-            # Materialize once: the generator is lazy, and the phantom-tail
-            # check needs to look at the LAST segment. This is the same single
-            # decode pass either way - no second model run.
-            segments = list(segments)
-            if self._filter_enabled():
-                kept = strip_phantom_tail(segments)
-                # Evidence is reported for what SURVIVED the tail strip, since
-                # that is the text a later stage might still act on.
-                remaining = segments[:len(kept)]   # only a TAIL is ever dropped
-            else:
-                kept = [seg.text for seg in segments]
-                remaining = segments
-            text = Transcript(join_segments(kept),
-                              segments_no_speech_prob(remaining))
-        return self._drop_prompt_echo(text, hotwords)
+            result = []
+            for segment in segments:
+                if cancel is not None and cancel.is_set():
+                    raise TranscriptionCancelled()
+                result.append(segment)
+            return result
+
+    def finalize_segments(self, segments, options):
+        # Apply the phantom filter only at the REAL end, including when earlier
+        # segments were decoded during recording. Never strip an internal seam.
+        if self._filter_enabled():
+            kept = strip_phantom_tail(segments)
+            remaining = segments[:len(kept)]
+        else:
+            kept = [seg.text for seg in segments]
+            remaining = segments
+        text = Transcript(join_segments(kept), segments_no_speech_prob(remaining))
+        return self._drop_prompt_echo(text, options.hotwords)
 
     @staticmethod
     def _drop_prompt_echo(text: str, hotwords: str | None) -> str:

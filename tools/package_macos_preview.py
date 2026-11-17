@@ -50,8 +50,7 @@ Record the Mac chip, macOS version, and the step that succeeded or failed.
 Use the Rekounts menu > Send Feedback, or:
 https://github.com/rekreatedigital/rekounts/issues
 
-This is a preview from the Mac compatibility branch. Its app version may
-match the stable Windows release; use the preview release tag to identify it.
+Use the preview release tag and app version to identify this build.
 Replacing an ad-hoc signed preview may require granting permissions again.
 """
 

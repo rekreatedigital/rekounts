@@ -13,7 +13,11 @@ to make, and it's free — not a trial, not a "Pro" tier waiting for you later.
 **[Download for Windows](https://github.com/rekreatedigital/rekounts/releases/latest)**
 · [rekounts.com](https://rekounts.com)
 
-> Windows 10/11 is the published download. Mac support targets Apple Silicon
+**New: [0.4.4 performance preview for Windows and Mac](https://rekounts.com/preview.html)**
+prepares longer dictations while you speak, using the same local model. Read the
+[release notes](https://rekounts.com/preview.html#changes) before trying it.
+
+> Windows 10/11 has the stable download. Mac support targets Apple Silicon
 > and Intel on macOS 13+, but remains experimental pending hands-on testing.
 > [Try the free Mac preview](docs/macos-preview.md), or
 > [start here](docs/macos-quickstart.md) for source setup and CI test builds.

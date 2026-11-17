@@ -15,6 +15,10 @@ and is dropped when the recording ends. There is no `.wav` file, no temp file,
 no upload, and no "improve the product" telemetry — the app contains no
 analytics code of any kind.
 
+For longer dictations, completed sections are transcribed locally while you
+speak. Prepared text stays in memory until you finish. Cancel discards it;
+history is written only after final delivery, subject to the History setting.
+
 If you enable **pre-roll** (`"preroll_enabled": true`), a short rolling buffer of
 the last half-second is kept in RAM so your first syllable is not clipped. Same
 rule: memory only, never disk. It is off by default precisely because it holds

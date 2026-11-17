@@ -6,10 +6,13 @@ that every MacBook and macOS release has been tested. The pinned ONNX Runtime
 1.23.2 wheels require macOS 13; the previous unqualified macOS 12 claim no longer
 matches the dependencies.
 
-**Status: experimental.** Windows remains the published download. A Mac release
-needs successful builds on both architectures and a completed
-[hardware checklist](../MACOS-TESTING.md). Automated tests cannot grant the
-permissions needed to prove real microphone, global hotkey and paste behavior.
+**Status: public preview.** Version 0.4.4 has downloadable disk images for both
+architectures on the [Mac download page](https://rekounts.com/mac.html).
+Native build, speech and interface checks passed on both architectures. A
+supported Mac release still needs the completed [hardware checklist](../MACOS-TESTING.md).
+Automated tests cannot grant the permissions needed to prove real microphone,
+global hotkey and paste behavior. The preview is not Developer ID signed or
+notarized; follow the [installation guide](macos-preview.md).
 
 For setup, use the [quickstart](macos-quickstart.md). For packaging, use
 [the Mac build instructions](macos-packaging.md).
