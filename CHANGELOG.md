@@ -9,6 +9,9 @@ there.
 
 ## [0.4.4 preview] — 2026-11-17
 
+[Downloads and release notes](https://rekounts.com/preview.html#changes) ·
+[Packages and checksums](https://github.com/rekreatedigital/rekounts/releases/tag/v0.4.4-preview.1).
+
 ### Faster results after long dictations
 
 - Prepare completed sections while you speak, using the same local speech
@@ -35,6 +38,17 @@ there.
 
 Mac support remains a preview pending the hardware checklist and a signed,
 notarized release. Separate Intel and Apple Silicon disk images are available.
+
+### Installing this preview
+
+- The Windows installer replaces the existing installation and preserves
+  settings, history, Scratchpad notes and the startup preference. Quit the app
+  before running it; a separate uninstall is unnecessary.
+- On Mac, quit Rekounts, replace the app in Applications, then reopen it and
+  follow the permissions guide.
+- Check for Updates opens the stable release page; it does not download or
+  install updates. This prerelease must be downloaded from the preview page.
+  The stable Windows release remains 0.4.3.
 
 ## [0.4.3] — 2026-07-28
 
